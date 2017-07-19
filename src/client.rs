@@ -1,6 +1,7 @@
-use std::path::PathBuf;
+use std::fs;
+use std::path::{Path, PathBuf};
 use github_rs::client::Github;
-use serde_json::value::from_value;
+use git2::{Direction, Repository, Remote};
 
 use errors::*;
 use raw_github::{Repo, Summary, Paginated};
@@ -33,7 +34,19 @@ impl Client {
         info!("Searching GitHub for repositories");
         let owned = self.get_owned_repositories()?;
 
-        unimplemented!()
+        info!("Starting backups");
+        self.do_backups(&owned).chain_err(|| "Backups failed")?;
+
+        Ok(Summary { repos: owned })
+    }
+
+    fn do_backups(&self, repos: &[Repo]) -> Result<()> {
+        for repo in repos {
+            debug!("Backing up {}", repo.full_name);
+            self.backup_repo(repo)?;
+        }
+
+        Ok(())
     }
 
     fn get_owned_repositories(&self) -> Result<Vec<Repo>> {
@@ -51,10 +64,61 @@ impl Client {
         Ok(owned_repos)
     }
 
-    fn clone_repo(&self, repo: &Repo) -> Result<()> {
+    fn clone_repo(&self, location: &Path, repo: &Repo) -> Result<Repository> {
+        debug!("Cloning into {} ({})", repo.clone_url, location.display());
+        Repository::clone(&repo.clone_url, location).chain_err(|| "Cloning failed")
+    }
+
+    fn backup_repo(&self, repo: &Repo) -> Result<()> {
         let location = self.backup_dir.join(&repo.full_name);
 
-        Ok(())
+        let repository = if !location.exists() {
+            self.clone_repo(&location, repo)?
+        } else {
+            Repository::open(&location).chain_err(
+                || "Couldn't open the git repository",
+            )?
+        };
+
+        let mut errs = Vec::new();
+
+        let remotes = repository.remotes().chain_err(
+            || "Couldn't get the remotes",
+        )?;
+        for remote_name in remotes.iter().filter_map(|r| r) {
+            trace!("Updating remote {} - {}", repo.full_name, remote_name);
+            let remote = repository.find_remote(remote_name).unwrap();
+
+            if let Err(e) = self.update_remote(remote) {
+                errs.push(e);
+            }
+        }
+
+        if errs.is_empty() {
+            Ok(())
+        } else {
+            Err(ErrorKind::FailedUpdate(repo.full_name.clone(), errs).into())
+        }
+    }
+
+    fn update_remote(&self, mut remote: Remote) -> Result<()> {
+        remote.connect(Direction::Fetch).chain_err(
+            || "Couldn't connect to remote",
+        )?;
+
+        let branches: Vec<_> = remote
+            .list()
+            .chain_err(|| "Couldn't get remote's branches")?
+            .iter()
+            .map(|b| b.name().to_string())
+            .collect();
+
+        let branch_names: Vec<_> = branches.iter().map(|b| b.as_ref()).collect();
+
+        trace!("Fetching branches {:?}", branch_names);
+        remote.fetch(&branch_names, None, None).chain_err(|| {
+            format!("Fetching failed for {:?}", remote.name())
+        })
     }
 }
 
@@ -86,14 +150,15 @@ mod tests {
         let root = env!("CARGO_MANIFEST_DIR");
 
         Repo {
-            full_name: String::from("Michael-F-Bryan"),
-            url: String::from(root),
+            full_name: String::from("Michael-F-Bryan/github-backup"),
+            clone_url: String::from(root),
         }
     }
 
-    /// This relies on having a valid `GITHUB_TOKEN` environment variable. If 
+    /// This relies on having a valid `GITHUB_TOKEN` environment variable. If
     /// not found, the test will pass, but be skipped.
     #[test]
+    #[ignore]
     fn get_repos_from_github() {
         let (client, _temp) = match authenticated_client() {
             Ok(v) => v,
@@ -102,7 +167,10 @@ mod tests {
 
         let repos = client.get_owned_repositories().unwrap();
 
-        assert!(repos.len() > 10, "I know I've got at least 10 owned repositories");
+        assert!(
+            repos.len() > 10,
+            "I know I've got at least 10 owned repositories"
+        );
     }
 
     #[test]
@@ -112,9 +180,20 @@ mod tests {
 
         let repo = dummy_repository();
 
-        assert_eq!(temp.path().join(&repo.full_name).exists(), false);
-        client.clone_repo(&repo).unwrap();
-        assert_eq!(temp.path().join(&repo.full_name).exists(), true);
-        assert_eq!(temp.path().join(&repo.full_name).join("src/bin/main.rs").exists(), true);
+        let parent_dir = temp.path().join("Michael-F-Bryan");
+        let repo_dir = parent_dir.join("github-backup");
+
+        assert_eq!(parent_dir.exists(), false);
+        assert_eq!(repo_dir.exists(), false);
+
+        client.clone_repo(&repo_dir, &repo).unwrap();
+
+        assert_eq!(parent_dir.exists(), true);
+        assert_eq!(repo_dir.exists(), true);
+        assert_eq!(
+            repo_dir.join("src/bin/main.rs").exists(),
+            true,
+            "some random file"
+        );
     }
 }

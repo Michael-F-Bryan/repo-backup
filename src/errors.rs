@@ -12,5 +12,9 @@ error_chain!{
             description("Bad Response")
             display("Bad Response ({}) - {}", status, msg)
         }
+        FailedUpdate(repo: String, errs: Vec<Error>) {
+            description("Failed Update")
+            display("Failed Update for {}", repo)
+        }
     }
 }

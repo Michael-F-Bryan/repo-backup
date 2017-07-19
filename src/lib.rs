@@ -9,6 +9,7 @@ extern crate log;
 extern crate serde_derive;
 extern crate serde_json;
 extern crate serde;
+extern crate git2;
 
 #[cfg(test)]
 extern crate tempdir;

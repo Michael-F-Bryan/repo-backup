@@ -11,7 +11,7 @@ use errors::*;
 #[serde(default)]
 pub struct Repo {
     pub full_name: String,
-    pub url: String,
+    pub clone_url: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
