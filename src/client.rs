@@ -106,19 +106,7 @@ impl Client {
             || "Couldn't connect to remote",
         )?;
 
-        let branches: Vec<_> = remote
-            .list()
-            .chain_err(|| "Couldn't get remote's branches")?
-            .iter()
-            .map(|b| b.name().to_string())
-            .collect();
-
-        let branch_names: Vec<_> = branches.iter().map(|b| b.as_ref()).collect();
-
-        trace!("Fetching branches {:?}", branch_names);
-        remote.fetch(&branch_names, None, None).chain_err(|| {
-            format!("Fetching failed for {:?}", remote.name())
-        })
+        remote.fetch(&[], None, None).map_err(|e| e.into())
     }
 }
 

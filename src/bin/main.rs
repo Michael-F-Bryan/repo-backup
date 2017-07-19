@@ -14,6 +14,8 @@ use log::LogLevel;
 use env_logger::LogBuilder;
 
 use github_backup::Client;
+use github_backup::errors::*;
+
 
 
 macro_rules! backtrace {
@@ -21,13 +23,8 @@ macro_rules! backtrace {
         match $maybe_err {
             Ok(val) => val,
             Err(e) => {
-                let mut stderr = io::stderr();
-                stderr.lock();
-                writeln!(stderr, "Error: {}", e).ok();
-                for cause in e.iter().skip(1) {
-                    writeln!(stderr, "\tCaused by: {}", cause).ok();
-                }
-
+                println!("{:#?}", e);
+                print_backtrace(&e, 0);
                 process::exit(1);
             }
         }
@@ -101,4 +98,25 @@ fn init_logger(verbose: u64) {
         .filter(Some("github_backup"), log_level.to_log_level_filter())
         .init()
         .ok();
+}
+
+fn print_backtrace(e: &Error, indent: usize) {
+    let stderr = io::stderr();
+    writeln!(stderr.lock(), "{}Error: {}", "\t".repeat(indent), e).unwrap();
+
+    for cause in e.iter().skip(1) {
+        writeln!(
+            stderr.lock(),
+            "{}Caused By: {}",
+            "\t".repeat(indent + 1),
+            cause
+        ).unwrap();
+
+        if let ErrorKind::FailedUpdate(ref name, ref errs) = *e.kind() {
+            println!("{} {:?}", name, errs);
+            for err in errs {
+                print_backtrace(err, indent + 2);
+            }
+        }
+    }
 }
