@@ -10,8 +10,11 @@ extern crate serde_derive;
 extern crate serde_json;
 extern crate serde;
 
+#[cfg(test)]
+extern crate tempdir;
+
 pub mod errors;
-pub mod client;
-pub mod data;
+mod client;
+mod raw_github;
 
 pub use client::Client;

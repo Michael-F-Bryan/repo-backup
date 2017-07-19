@@ -62,9 +62,7 @@ fn main() {
     init_logger(verbose);
 
     let token = get_token(&matches);
-    let backup_dir = matches.value_of("backup-dir").expect(
-        "We provided a default...",
-    );
+    let backup_dir = matches.value_of("backup-dir").expect("unreachable");
 
     let client = backtrace!(Client::new(token, backup_dir));
 
