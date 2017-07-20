@@ -7,11 +7,16 @@ use hyper::header::{Headers, Link, RelationType};
 use errors::*;
 
 
+/// A repository as reported by GitHub (not all fields are deserialized for
+/// brevity).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Repo {
+    /// The repository's name.
     pub name: String,
+    /// The repository's full name. Typically in the form `<user>/<repo>`
     pub full_name: String,
+    /// The `https` URL used to clone this repository.
     pub clone_url: String,
 }
 

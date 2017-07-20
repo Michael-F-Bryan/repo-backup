@@ -10,7 +10,7 @@ First you'll need to install the program using `cargo`.
 $ cargo install --git https://github.com/Michael-F-Bryan/github-backup
 ```
 
-> **Note:** You'll need to install directly from git for now, I haven't
+> **Note:** You'll need to install directly from git for now. I haven't
 > decided whether it's worth uploading to `crates.io` yet.
 
 Then run it in your chosen directory:

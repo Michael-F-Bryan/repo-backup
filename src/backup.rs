@@ -6,6 +6,11 @@ use raw_github::Repo;
 use errors::*;
 
 
+/// Backup a single repository in the provided `backup_dir`.
+///
+/// This uses the repo's `full_name` joined with `backup_dir` as the location
+/// to clone into. If that already exists, it'll `cd` into that directory and
+/// run `git pull`, as well as update any git submodules if applicable.
 pub fn backup_repo<P: AsRef<Path>>(repo: &Repo, backup_dir: P) -> Result<()> {
     info!("Backing up {}", repo.full_name);
 

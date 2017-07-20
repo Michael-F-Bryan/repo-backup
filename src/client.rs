@@ -81,6 +81,7 @@ mod tests {
     /// This relies on having a valid `GITHUB_TOKEN` environment variable. If
     /// not found, the test will pass, but be skipped.
     #[test]
+    #[ignore]
     fn get_repos_from_github() {
         let token = match token() {
             Ok(v) => v,
