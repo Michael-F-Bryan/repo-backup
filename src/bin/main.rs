@@ -1,7 +1,6 @@
 extern crate env_logger;
 extern crate github_backup;
 extern crate dotenv;
-#[macro_use]
 extern crate log;
 #[macro_use]
 extern crate clap;
@@ -13,9 +12,7 @@ use clap::{Arg, ArgMatches};
 use log::LogLevel;
 use env_logger::LogBuilder;
 
-use github_backup::Client;
 use github_backup::errors::*;
-
 
 
 macro_rules! backtrace {
@@ -23,7 +20,6 @@ macro_rules! backtrace {
         match $maybe_err {
             Ok(val) => val,
             Err(e) => {
-                println!("{:#?}", e);
                 print_backtrace(&e, 0);
                 process::exit(1);
             }
@@ -33,37 +29,12 @@ macro_rules! backtrace {
 
 
 fn main() {
-    dotenv::dotenv().ok();
+    let (token, backup_dir) = parse_args();
 
-    let matches = app_from_crate!()
-        .arg(Arg::with_name("token").short("t").long("token").help(
-            "Your GitHub API token (defaults to GITHUB_TOKEN env variable)",
-        ))
-        .arg(
-            Arg::with_name("backup-dir")
-                .short("d")
-                .long("backup-dir")
-                .help("The directory to save backups to.")
-                .default_value("."),
-        )
-        .arg(
-            Arg::with_name("verbose")
-                .short("v")
-                .long("verbose")
-                .multiple(true)
-                .help("Sets the verbosity level (repeat for more verbosity)"),
-        )
-        .get_matches();
-
-    let verbose = matches.occurrences_of("verbose");
-    init_logger(verbose);
-
-    let token = get_token(&matches);
-    let backup_dir = matches.value_of("backup-dir").expect("unreachable");
-
-    let client = backtrace!(Client::new(token, backup_dir));
-
-    backtrace!(client.run());
+    let repositories = backtrace!(github_backup::get_repos(&token));
+    for repo in repositories {
+        backtrace!(github_backup::backup_repo(&repo, &backup_dir));
+    }
 }
 
 
@@ -72,14 +43,17 @@ fn main() {
 /// This will first check the command line arguments, falling back to
 /// the `GITHUB_TOKEN` environment variable. If no token is found,
 /// log the error and exit.
-fn get_token(matches: &ArgMatches) -> String {
+fn token(matches: &ArgMatches) -> String {
     if let Some(tok) = matches.value_of("token") {
         return tok.to_string();
     } else {
         match env::var("GITHUB_TOKEN").ok() {
             Some(tok) => tok,
             None => {
-                error!("No token found");
+                let stderr = io::stderr();
+                writeln!(stderr.lock(), "No API token found.").ok();
+                writeln!(stderr.lock(), 
+                    "(Note: you can provide it using the GITHUB_TOKEN environment variable or the -t flag)").ok();
                 process::exit(1);
             }
         }
@@ -111,12 +85,43 @@ fn print_backtrace(e: &Error, indent: usize) {
             "\t".repeat(indent + 1),
             cause
         ).unwrap();
-
-        if let ErrorKind::FailedUpdate(ref name, ref errs) = *e.kind() {
-            println!("{} {:?}", name, errs);
-            for err in errs {
-                print_backtrace(err, indent + 2);
-            }
-        }
     }
+}
+
+fn parse_args() -> (String, String) {
+    dotenv::dotenv().ok();
+
+    let matches = app_from_crate!()
+        .arg(
+            Arg::with_name("token")
+                .short("t")
+                .long("token")
+                .takes_value(true)
+                .help(
+                    "Your GitHub API token (defaults to GITHUB_TOKEN env variable)",
+                ),
+        )
+        .arg(
+            Arg::with_name("backup-dir")
+                .short("d")
+                .long("backup-dir")
+                .help("The directory to save backups to.")
+                .default_value("."),
+        )
+        .arg(
+            Arg::with_name("verbose")
+                .short("v")
+                .long("verbose")
+                .multiple(true)
+                .help("Sets the verbosity level (repeat for more verbosity)"),
+        )
+        .get_matches();
+
+    let verbose = matches.occurrences_of("verbose");
+    init_logger(verbose);
+
+    let tok = token(&matches);
+    let backup_dir = matches.value_of("backup-dir").expect("unreachable");
+
+    (tok, backup_dir.to_string())
 }

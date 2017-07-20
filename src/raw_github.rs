@@ -14,12 +14,6 @@ pub struct Repo {
     pub clone_url: String,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct Summary {
-    pub repos: Vec<Repo>,
-}
-
 
 pub struct Paginated<'a, I>
 where
@@ -68,7 +62,7 @@ where
     }
 
     fn send_request(&mut self, endpoint: &str) -> Result<Option<Value>> {
-        debug!("Sending request to {:?}", endpoint);
+        trace!("Sending request to {:?}", endpoint);
         let (headers, status, jason) = self.client
             .get()
             .custom_endpoint(endpoint)
