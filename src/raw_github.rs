@@ -10,6 +10,7 @@ use errors::*;
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Repo {
+    pub name: String,
     pub full_name: String,
     pub clone_url: String,
 }

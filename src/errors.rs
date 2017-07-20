@@ -1,5 +1,6 @@
 use hyper::StatusCode;
 use std::process::Output;
+use raw_github::Repo;
 
 
 error_chain!{
@@ -14,9 +15,9 @@ error_chain!{
             display("Bad Response ({}) - {}", status, msg)
         }
 
-        Subcommand(cmd: String, output: Output) {
+        Subcommand(repo: Repo, cmd: String, output: Output) {
             description("Command Failed")
-            display("{:?} failed{}", cmd, match output.status.code() {
+            display("({}) {:?} failed{}", repo.full_name, cmd, match output.status.code() {
                 Some(ret) => format!(" with return code {}", ret),
                 None => String::new(),
             })

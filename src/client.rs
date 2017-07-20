@@ -72,6 +72,7 @@ mod tests {
         let root = env!("CARGO_MANIFEST_DIR");
 
         Repo {
+            name: String::from("github-backup"),
             full_name: String::from("Michael-F-Bryan/github-backup"),
             clone_url: String::from(root),
         }

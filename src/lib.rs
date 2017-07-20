@@ -20,3 +20,4 @@ mod backup;
 
 pub use client::get_repos;
 pub use backup::backup_repo;
+pub use raw_github::Repo;
