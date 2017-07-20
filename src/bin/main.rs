@@ -111,7 +111,13 @@ fn print_backtrace(e: &Error, indent: usize) {
 }
 
 fn parse_args() -> Args {
+    // default dotenv
     dotenv::dotenv().ok();
+
+    // also check relative to the user's home directory (e.g. cron jobs)
+    if let Some(home) = env::home_dir() {
+        dotenv::from_path(&home.join(".env")).ok();
+    }
 
     let matches = app_from_crate!()
         .arg(
