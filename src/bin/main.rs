@@ -1,8 +1,10 @@
 extern crate env_logger;
 extern crate github_backup;
 extern crate dotenv;
+#[macro_use]
 extern crate log;
 extern crate rayon;
+extern crate chrono;
 #[macro_use]
 extern crate clap;
 
@@ -13,6 +15,7 @@ use std::path::{Path, PathBuf};
 use clap::{Arg, ArgMatches};
 use log::LogLevel;
 use env_logger::LogBuilder;
+use chrono::Local;
 use rayon::prelude::*;
 
 use github_backup::errors::*;
@@ -44,6 +47,8 @@ fn main() {
     };
 
     if !errors.is_empty() {
+        error!("{} errors encountered", errors.len());
+
         for err in errors {
             print_backtrace(&err, 0);
         }
@@ -85,21 +90,23 @@ fn init_logger(verbose: u64) {
 
     LogBuilder::new()
         .filter(Some("github_backup"), log_level.to_log_level_filter())
+        .format(|record| {
+            format!(
+                "{} [{}] - {}",
+                Local::now().format("%Y-%m-%d %H:%M:%S"),
+                record.level(),
+                record.args()
+            )
+        })
         .init()
         .ok();
 }
 
 fn print_backtrace(e: &Error, indent: usize) {
-    let stderr = io::stderr();
-    writeln!(stderr.lock(), "{}Error: {}", "\t".repeat(indent), e).unwrap();
+    warn!("{}Error: {}", "\t".repeat(indent), e);
 
     for cause in e.iter().skip(1) {
-        writeln!(
-            stderr.lock(),
-            "{}Caused By: {}",
-            "\t".repeat(indent + 1),
-            cause
-        ).unwrap();
+        warn!("{}Caused By: {}", "\t".repeat(indent + 1), cause);
     }
 }
 
@@ -148,6 +155,7 @@ fn parse_args() -> Args {
         token: tok,
         backup_dir: PathBuf::from(backup_dir),
         parallel: !matches.is_present("sequential"),
+        verbose: verbose,
     }
 }
 
@@ -179,4 +187,5 @@ struct Args {
     parallel: bool,
     backup_dir: PathBuf,
     token: String,
+    verbose: u64,
 }

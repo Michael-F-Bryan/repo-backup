@@ -9,6 +9,7 @@ name = "github-backup"
 path = "src/bin/main.rs"
 
 [dependencies]
+chrono = "0.4.0"
 clap = "2.25.0"
 dotenv = "0.10.1"
 env_logger = "0.4.3"

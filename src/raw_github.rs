@@ -72,7 +72,7 @@ where
 
         trace!("Status: {:?}", status);
         trace!("Headers: {:#?}", headers);
-        trace!("Response: {:?}", jason);
+        // trace!("Response: {:?}", jason);
 
         self.set_new_endpoint(&headers);
 
