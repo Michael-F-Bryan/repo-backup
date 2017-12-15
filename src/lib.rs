@@ -8,7 +8,9 @@ extern crate serde;
 extern crate serde_derive;
 extern crate toml;
 
-mod config;
+pub mod config;
+
+pub use config::Config;
 
 use std::path::Path;
 use failure::Error;
@@ -22,6 +24,9 @@ pub struct Repo {
 
 pub trait Provider {
     type Repositories: Iterator<Item = Repo>;
+
+    /// The `Provider`'s name.
+    fn name(&self) -> &str;
 
     /// Get an iterator over all the available repositories.
     fn repositories(&self) -> Result<Self::Repositories, Error>;
