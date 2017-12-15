@@ -10,8 +10,11 @@ name = "repo-backup"
 path = "src/bin/repo-backup.rs"
 
 [dependencies]
+chrono = "0.4.0"
+env_logger = "0.5.0-rc.1"
 failure = "0.1.1"
 failure_derive = "0.1.1"
+log = "0.4.0-rc.1"
 serde = "1.0.24"
 serde_derive = "1.0.24"
 shellexpand = "1.0.0"
