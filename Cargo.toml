@@ -5,8 +5,13 @@ name = "repo-backup"
 version = "0.2.0"
 
 [[bin]]
+doc = false
 name = "repo-backup"
 path = "src/bin/repo-backup.rs"
-doc = false
 
 [dependencies]
+failure = "0.1.1"
+failure_derive = "0.1.1"
+serde = "1.0.24"
+serde_derive = "1.0.24"
+toml = "0.4.5"
