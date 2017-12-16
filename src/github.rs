@@ -22,7 +22,7 @@ impl GitHub {
 
         for repo in Paginated::new(&self.cfg.api_key, "https://api.github.com/user/repos") {
             let repo: RawRepo = repo?;
-            owned.push(Repo::from(repo));
+            owned.push(self.convert_repo(repo));
         }
 
         debug!("{} owned repos", owned.len());
@@ -36,11 +36,20 @@ impl GitHub {
 
         for repo in Paginated::new(&self.cfg.api_key, "https://api.github.com/user/starred") {
             let repo: RawRepo = repo?;
-            starred.push(Repo::from(repo));
+            starred.push(self.convert_repo(repo));
         }
 
         debug!("{} starred repos", starred.len());
         Ok(starred)
+    }
+
+    fn convert_repo(&self, raw: RawRepo) -> Repo {
+        Repo {
+            name: raw.name,
+            owner: raw.owner.login,
+            url: raw.clone_url,
+            provider: self.name().to_string(),
+        }
     }
 }
 
@@ -84,14 +93,4 @@ struct RawRepo {
 struct Owner {
     login: String,
     #[serde(rename = "type")] kind: String,
-}
-
-impl From<RawRepo> for Repo {
-    fn from(other: RawRepo) -> Repo {
-        Repo {
-            name: other.name,
-            owner: other.owner.login,
-            url: other.clone_url,
-        }
-    }
 }

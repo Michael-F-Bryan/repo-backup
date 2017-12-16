@@ -15,12 +15,33 @@ impl Driver {
     }
 
     pub fn run(&self) -> Result<(), Error> {
-        info!("Starting repo-backup");
-
         let providers = get_providers(&self.config)?;
         let repos = self.get_repos_from_providers(&providers)?;
+        self.update_repos(&repos)?;
 
         Ok(())
+    }
+
+    fn update_repos(&self, repos: &[Repo]) -> Result<(), UpdateOutcome> {
+        info!("Updating repositories");
+        let mut errors = Vec::new();
+
+        for repo in repos {
+            if let Err(e) = self.update_repo(repo) {
+                warn!("Updating {} failed, {}", repo.name, e);
+                errors.push((repo.clone(), e));
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(UpdateOutcome { errors })
+        }
+    }
+
+    fn update_repo(&self, repo: &Repo) -> Result<(), Error> {
+        unimplemented!()
     }
 
     fn get_repos_from_providers(&self, providers: &[Box<Provider>]) -> Result<Vec<Repo>, Error> {
@@ -32,12 +53,18 @@ impl Driver {
                 .repositories()
                 .context("Unable to fetch repositories")?;
 
-            debug!("Found {} repos from {}", found.len(), provider.name());
+            info!("Found {} repos from {}", found.len(), provider.name());
             repos.extend(found);
         }
 
         Ok(repos)
     }
+}
+
+#[derive(Debug, Fail)]
+#[fail(display = "One or more errors ecountered while updating repos")]
+struct UpdateOutcome {
+    errors: Vec<(Repo, Error)>,
 }
 
 fn get_providers(cfg: &Config) -> Result<Vec<Box<Provider>>, Error> {

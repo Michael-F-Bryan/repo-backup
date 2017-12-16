@@ -15,7 +15,6 @@ pub struct Config {
 #[serde(rename_all = "kebab-case")]
 pub struct General {
     pub dest_dir: PathBuf,
-    pub log_file: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

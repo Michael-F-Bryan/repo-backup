@@ -34,7 +34,6 @@ fn main() {
 
 fn run(args: &Args) -> Result<(), Error> {
     initialize_logging(args)?;
-    debug!("Hello");
     let cfg = args.config()?;
 
     if log_enabled!(log::Level::Debug) {

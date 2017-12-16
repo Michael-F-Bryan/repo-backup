@@ -27,6 +27,7 @@ use failure::{Error, SyncFailure};
 pub struct Repo {
     owner: String,
     name: String,
+    provider: String,
     url: String,
 }
 
