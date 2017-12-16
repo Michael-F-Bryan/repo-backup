@@ -3,6 +3,7 @@
 extern crate failure;
 #[macro_use]
 extern crate failure_derive;
+extern crate git2;
 #[macro_use]
 extern crate log;
 extern crate reqwest;
@@ -18,7 +19,7 @@ mod github;
 mod utils;
 
 pub use config::Config;
-pub use driver::Driver;
+pub use driver::{Driver, UpdateFailure};
 pub use github::GitHub;
 
 use failure::{Error, SyncFailure};
@@ -29,6 +30,12 @@ pub struct Repo {
     name: String,
     provider: String,
     url: String,
+}
+
+impl Repo {
+    pub fn full_name(&self) -> String {
+        format!("{}/{}/{}", self.provider, self.owner, self.name)
+    }
 }
 
 pub trait Provider {

@@ -9,26 +9,32 @@ extern crate structopt;
 #[macro_use]
 extern crate structopt_derive;
 
-use std::io::Write;
+use std::io::{self, Write};
 use std::env;
 
 use log::LevelFilter;
 use failure::{Error, ResultExt};
 use env_logger::Builder;
 use structopt::StructOpt;
-use repo_backup::{Config, Driver};
+use repo_backup::{Config, Driver, UpdateFailure};
 use chrono::Local;
 
 fn main() {
     let args = Args::from_args();
 
     if let Err(e) = run(&args) {
-        eprintln!("Error: {}", e);
-        for cause in e.causes().skip(1) {
-            eprintln!("\tCaused By: {}", cause);
-        }
+        if let Some(outcome_failure) = e.downcast_ref::<UpdateFailure>() {
+            let mut stderr = io::stderr();
+            outcome_failure.display(&mut stderr).unwrap();
+        } else {
+            eprintln!("Error: {}", e);
 
-        eprintln!("{}", e.backtrace());
+            for cause in e.causes().skip(1) {
+                eprintln!("\tCaused By: {}", cause);
+            }
+
+            eprintln!("{}", e.backtrace());
+        }
     }
 }
 
