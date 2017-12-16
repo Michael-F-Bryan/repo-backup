@@ -1,7 +1,7 @@
 use std::io::Write;
 use std::path::Path;
 use failure::{Error, ResultExt};
-use git2::{AutotagOption, FetchOptions, FetchPrune, Repository};
+use git2::{AutotagOption, FetchOptions, FetchPrune, RemoteCallbacks, Repository};
 use git2::build::RepoBuilder;
 
 use config::Config;
@@ -77,8 +77,44 @@ impl Driver {
 fn clone_repo(dest_dir: &Path, repo: &Repo) -> Result<(), Error> {
     debug!("Cloning into {}", dest_dir.display());
 
-    RepoBuilder::new().clone(&repo.url, dest_dir)?;
+    let mut builder = RepoBuilder::new();
+
+    let mut fetch_opts = FetchOptions::new();
+    fetch_opts
+        .prune(FetchPrune::On)
+        .download_tags(AutotagOption::All);
+
+    if let Some(cb) = logging_cb(repo) {
+        fetch_opts.remote_callbacks(cb);
+    }
+
+    builder
+        .fetch_options(fetch_opts)
+        .clone(&repo.url, dest_dir)?;
     Ok(())
+}
+
+/// If we are logging at `trace` level, get a `RemoteCallbacks` which will print
+/// a progress message.
+fn logging_cb<'a>(repo: &'a Repo) -> Option<RemoteCallbacks<'a>> {
+    if log_enabled!(::log::Level::Trace) {
+        let mut cb = RemoteCallbacks::new();
+        let repo_name = repo.full_name();
+
+        cb.transfer_progress(move |progress| {
+            trace!(
+                "{} downloaded {}/{} objects ({} bytes)",
+                repo_name,
+                progress.received_objects(),
+                progress.total_objects(),
+                progress.received_bytes()
+            );
+            true
+        });
+        Some(cb)
+    } else {
+        None
+    }
 }
 
 fn fetch_updates(dest_dir: &Path, repo: &Repo) -> Result<(), Error> {
@@ -92,13 +128,16 @@ fn fetch_updates(dest_dir: &Path, repo: &Repo) -> Result<(), Error> {
     fetch_opts
         .prune(FetchPrune::On)
         .download_tags(AutotagOption::All);
+
+    if let Some(cb) = logging_cb(repo) {
+        fetch_opts.remote_callbacks(cb);
+    }
+
     remote
         .download(&[], Some(&mut fetch_opts))
         .context("Download failed")?;
 
     if remote.stats().received_bytes() != 0 {
-        // If there are local objects (we got a thin pack), then tell the user
-        // how many objects we saved from having to cross the network.
         let stats = remote.stats();
         if stats.local_objects() > 0 {
             debug!(
@@ -119,7 +158,6 @@ fn fetch_updates(dest_dir: &Path, repo: &Repo) -> Result<(), Error> {
         }
     }
 
-    // Disconnect the underlying connection to prevent from idling.
     remote.disconnect();
 
     // Update the references in the remote's namespace to point to the right

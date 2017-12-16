@@ -69,10 +69,10 @@ where
                 trace!("{}", line);
             }
 
-            trace!("Body:");
-            for line in serde_json::to_string_pretty(&raw).unwrap().lines() {
-                trace!("{}", line);
-            }
+            // trace!("Body:");
+            // for line in serde_json::to_string_pretty(&raw).unwrap().lines() {
+            //     trace!("{}", line);
+            // }
         }
 
         let got = serde_json::from_value(raw).context("Unable to deserialize response")?;
