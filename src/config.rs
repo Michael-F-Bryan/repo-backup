@@ -22,6 +22,12 @@ pub struct General {
 #[serde(rename_all = "kebab-case")]
 pub struct GithubConfig {
     pub api_key: String,
+    #[serde(default = "always_true")] pub starred: bool,
+    #[serde(default = "always_true")] pub owned: bool,
+}
+
+fn always_true() -> bool {
+    true
 }
 
 impl Config {

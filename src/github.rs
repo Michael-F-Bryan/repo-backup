@@ -7,14 +7,40 @@ use {Provider, Repo};
 
 #[derive(Clone)]
 pub struct GitHub {
-    api_key: String,
+    cfg: GithubConfig,
 }
 
 impl GitHub {
     pub fn with_config(cfg: GithubConfig) -> GitHub {
-        GitHub {
-            api_key: cfg.api_key,
+        GitHub { cfg }
+    }
+
+    fn get_owned(&self) -> Result<Vec<Repo>, Error> {
+        debug!("Fetching owned repositories");
+
+        let mut owned = Vec::new();
+
+        for repo in Paginated::new(&self.cfg.api_key, "https://api.github.com/user/repos") {
+            let repo: RawRepo = repo?;
+            owned.push(Repo::from(repo));
         }
+
+        debug!("{} owned repos", owned.len());
+        Ok(owned)
+    }
+
+    fn get_starred(&self) -> Result<Vec<Repo>, Error> {
+        debug!("Fetching starred repositories");
+
+        let mut starred = Vec::new();
+
+        for repo in Paginated::new(&self.cfg.api_key, "https://api.github.com/user/starred") {
+            let repo: RawRepo = repo?;
+            starred.push(Repo::from(repo));
+        }
+
+        debug!("{} starred repos", starred.len());
+        Ok(starred)
     }
 }
 
@@ -26,21 +52,14 @@ impl Provider for GitHub {
     fn repositories(&self) -> Result<Vec<Repo>, Error> {
         let mut repos = Vec::new();
 
-        debug!("Fetching owned repositories");
-
-        let owned = Paginated::new(&self.api_key, "https://api.github.com/user/repos")
-            .collect::<Result<Vec<RawRepo>, Error>>()
-            .context("Unable to fetch owned repositories")?;
-
-        debug!("{} owned repos", owned.len());
-        repos.extend(owned.into_iter().map(Into::into));
-
-        let starred = Paginated::new(&self.api_key, "https://api.github.com/user/starred")
-            .collect::<Result<Vec<RawRepo>, Error>>()
-            .context("Unable to fetch starred repositories")?;
-
-        debug!("{} starred repos", starred.len());
-        repos.extend(starred.into_iter().map(Into::into));
+        if self.cfg.owned {
+            repos.extend(self.get_owned()
+                .context("Unable to fetch owned repositories")?);
+        }
+        if self.cfg.starred {
+            repos.extend(self.get_starred()
+                .context("Unable to fetch starred repositories")?);
+        }
 
         Ok(repos)
     }
