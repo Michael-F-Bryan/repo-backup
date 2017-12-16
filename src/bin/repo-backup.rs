@@ -55,7 +55,8 @@ struct Args {
     #[structopt(short = "c", long = "config", default_value = "~/.repo-backup.toml",
                 help = "The configuration file to use.")]
     config_file: String,
-    #[structopt(short = "v", long = "verbose", help = "Verbose output (repeat for more verbosity)")]
+    #[structopt(short = "v", long = "verbose",
+                help = "Verbose output (repeat for more verbosity)")]
     verbosity: u64,
 }
 
@@ -74,13 +75,15 @@ fn initialize_logging(args: &Args) -> Result<(), Error> {
     let mut builder = Builder::new();
 
     let level = match args.verbosity {
-        0 => LevelFilter::Warn,
-        1 => LevelFilter::Info,
-        2 => LevelFilter::Debug,
-        _ => LevelFilter::Trace,
+        0 => None,
+        1 => Some(LevelFilter::Info),
+        2 => Some(LevelFilter::Debug),
+        _ => Some(LevelFilter::Trace),
     };
 
-    builder.filter(Some("repo_backup"), level);
+    if let Some(lvl) = level {
+        builder.filter(Some("repo_backup"), lvl);
+    }
 
     if let Ok(filter) = env::var("RUST_LOG") {
         builder.parse(&filter);

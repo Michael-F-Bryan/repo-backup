@@ -16,7 +16,7 @@ impl Driver {
 
     pub fn run(&self) -> Result<(), Error> {
         info!("Starting repo-backup");
-        let providers = get_providers(&self.config);
+        let providers = get_providers(&self.config)?;
 
         if providers.is_empty() {
             warn!("No providers found");
@@ -33,13 +33,13 @@ impl Driver {
     }
 }
 
-fn get_providers(cfg: &Config) -> Vec<Box<Provider>> {
+fn get_providers(cfg: &Config) -> Result<Vec<Box<Provider>>, Error> {
     let mut providers: Vec<Box<Provider>> = Vec::new();
 
     if let Some(gh_config) = cfg.github.as_ref() {
-        let gh = GitHub::with_config(gh_config.clone());
+        let gh = GitHub::with_config(gh_config.clone())?;
         providers.push(Box::new(gh));
     }
 
-    providers
+    Ok(providers)
 }

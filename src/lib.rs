@@ -4,11 +4,13 @@
 extern crate failure;
 #[macro_use]
 extern crate failure_derive;
+extern crate github_rs;
 #[macro_use]
 extern crate log;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
+extern crate serde_json;
 extern crate toml;
 
 pub mod config;
@@ -20,11 +22,11 @@ pub use driver::Driver;
 pub use github::GitHub;
 
 use std::path::Path;
-use failure::Error;
+use failure::{Error, SyncFailure};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Repo {
-    user: String,
+    owner: String,
     name: String,
     url: String,
 }
@@ -38,4 +40,21 @@ pub trait Provider {
 
     /// Download a specific repo.
     fn download(&self, repo: &Repo, destination: &Path) -> Result<(), Error>;
+}
+
+trait SyncResult<T, E> {
+    fn sync(self) -> Result<T, SyncFailure<E>>
+    where
+        Self: Sized,
+        E: ::std::error::Error + Send + 'static;
+}
+
+impl<T, E> SyncResult<T, E> for Result<T, E> {
+    fn sync(self) -> Result<T, SyncFailure<E>>
+    where
+        Self: Sized,
+        E: ::std::error::Error + Send + 'static,
+    {
+        self.map_err(SyncFailure::new)
+    }
 }
