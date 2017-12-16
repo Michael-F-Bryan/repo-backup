@@ -2,7 +2,7 @@
 authors = ["Michael Bryan <michaelfbryan@gmail.com>"]
 description = "A program for backing up your GitHub repos."
 name = "repo-backup"
-version = "0.2.0"
+version = "0.2.1-alpha.0"
 license = "MIT"
 documentation = "https://docs.rs/repo-backup"
 repository = "https://github.com/Michael-F-Bryan/repo-backup"
