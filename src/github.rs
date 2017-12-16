@@ -5,12 +5,14 @@ use config::GithubConfig;
 use utils::Paginated;
 use {Provider, Repo};
 
+/// An interface to the repositories stored on github.
 #[derive(Clone)]
 pub struct GitHub {
     cfg: GithubConfig,
 }
 
 impl GitHub {
+    /// Create a new `GitHub` with the provided config.
     pub fn with_config(cfg: GithubConfig) -> GitHub {
         GitHub { cfg }
     }

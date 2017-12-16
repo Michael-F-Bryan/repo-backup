@@ -8,25 +8,35 @@ use config::Config;
 use github::GitHub;
 use {Provider, Repo};
 
+/// A driver for orchestrating the process of fetching a list of repositories
+/// and then downloading each of them.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Driver {
     config: Config,
 }
 
 impl Driver {
+    /// Create a new `Driver` with the provided config.
     pub fn with_config(config: Config) -> Driver {
         Driver { config }
     }
 
+    /// Download a list of all repositories from the `Provider`s found in the
+    /// configuration file, then fetch any recent changes (running `git clone`
+    /// if necessary).
     pub fn run(&self) -> Result<(), Error> {
+        info!("Starting repository backup");
+
         let providers = get_providers(&self.config)?;
         let repos = self.get_repos_from_providers(&providers)?;
         self.update_repos(&repos)?;
 
+        info!("Finished repository backup");
         Ok(())
     }
 
-    fn update_repos(&self, repos: &[Repo]) -> Result<(), UpdateFailure> {
+    /// Update the provided repositories.
+    pub fn update_repos(&self, repos: &[Repo]) -> Result<(), UpdateFailure> {
         info!("Updating repositories");
         let mut errors = Vec::new();
 
@@ -57,7 +67,12 @@ impl Driver {
         Ok(())
     }
 
-    fn get_repos_from_providers(&self, providers: &[Box<Provider>]) -> Result<Vec<Repo>, Error> {
+    /// Iterate over the `Provider`s and collect all the repositories they've
+    /// found into one big list.
+    pub fn get_repos_from_providers(
+        &self,
+        providers: &[Box<Provider>],
+    ) -> Result<Vec<Repo>, Error> {
         let mut repos = Vec::new();
 
         for provider in providers {
@@ -169,6 +184,7 @@ fn fetch_updates(dest_dir: &Path, repo: &Repo) -> Result<(), Error> {
     Ok(())
 }
 
+/// A wrapper around one or more failures during the updating process.
 #[derive(Debug, Fail)]
 #[fail(display = "One or more errors ecountered while updating repos")]
 pub struct UpdateFailure {
@@ -176,6 +192,7 @@ pub struct UpdateFailure {
 }
 
 impl UpdateFailure {
+    /// Print a "backtrace" for each error encountered.
     pub fn display<W: Write>(&self, writer: &mut W) -> Result<(), Error> {
         writeln!(
             writer,
