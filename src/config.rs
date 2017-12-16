@@ -81,4 +81,14 @@ impl Config {
             }),
         }
     }
+
+    /// Serialize the `Config` as TOML.
+    pub fn as_toml(&self) -> String {
+        match toml::to_string_pretty(self) {
+            Ok(s) => s,
+            Err(e) => {
+                panic!("Serializing a Config should never fail. {}", e);
+            }
+        }
+    }
 }

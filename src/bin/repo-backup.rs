@@ -22,6 +22,11 @@ use chrono::Local;
 fn main() {
     let args = Args::from_args();
 
+    if args.example_config {
+        generate_example();
+        return;
+    }
+
     if let Err(e) = run(&args) {
         if let Some(outcome_failure) = e.downcast_ref::<UpdateFailure>() {
             let mut stderr = io::stderr();
@@ -36,6 +41,12 @@ fn main() {
             eprintln!("{}", e.backtrace());
         }
     }
+}
+
+fn generate_example() {
+    let example = Config::example();
+
+    println!("{}", example.as_toml());
 }
 
 fn run(args: &Args) -> Result<(), Error> {
@@ -63,6 +74,9 @@ struct Args {
     #[structopt(short = "v", long = "verbose",
                 help = "Verbose output (repeat for more verbosity)")]
     verbosity: u64,
+    #[structopt(long = "example-config",
+                help = "Generate an example config and immediately exit.")]
+    example_config: bool,
 }
 
 impl Args {
