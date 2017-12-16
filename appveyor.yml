@@ -8,17 +8,9 @@ environment:
     CRATE_NAME: repo-backup
 
   matrix:
-    # MinGW
-    - TARGET: i686-pc-windows-gnu
-    - TARGET: x86_64-pc-windows-gnu
-
     # MSVC
     - TARGET: i686-pc-windows-msvc
     - TARGET: x86_64-pc-windows-msvc
-
-    # Testing other channels
-    - TARGET: x86_64-pc-windows-gnu
-      RUST_VERSION: nightly
     - TARGET: x86_64-pc-windows-msvc
       RUST_VERSION: nightly
 
@@ -34,9 +26,6 @@ install:
   - set PATH=%PATH%;C:\Users\appveyor\.cargo\bin
   - rustc -Vv
   - cargo -V
-  # CMake refuses to generate MinGW Makefiles if sh.exe is in the Path
-  - ps: Get-Command sh.exe -All | Remove-Item
-# TODO This is the "test phase", tweak it as you see fit
 test_script:
   # we don't run the "test phase" when doing deploys
   - if [%APPVEYOR_REPO_TAG%]==[false] (
@@ -47,16 +36,11 @@ test_script:
     )
 
 before_deploy:
-  # TODO Update this to build the artifacts that matter to you
   - cargo rustc --target %TARGET% --release --bin repo-backup -- -C lto
   - ps: ci\before_deploy.ps1
 
 deploy:
   artifact: /.*\.zip/
-  # TODO update `auth_token.secure`
-  # - Create a `public_repo` GitHub token. Go to: https://github.com/settings/tokens/new
-  # - Encrypt it. Go to https://ci.appveyor.com/tools/encrypt
-  # - Paste the output down here
   auth_token:
     secure: Bagtl9+vXkc7NfvHLdT/H6zQtGqUMXASvYbYJsBmdT7Lm2jnF8UryV1Opg2oIqJS
   description: ''
