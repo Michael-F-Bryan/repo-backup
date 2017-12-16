@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::io::Read;
 use std::fs::File;
 
-use failure::{Error, Fail, ResultExt};
+use failure::{Error, ResultExt};
 use toml;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

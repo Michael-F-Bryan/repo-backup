@@ -1,12 +1,11 @@
 //! A small utility for making a local copy of all your GitHub projects.
 
-#[macro_use]
 extern crate failure;
 #[macro_use]
 extern crate failure_derive;
-extern crate github_rs;
 #[macro_use]
 extern crate log;
+extern crate reqwest;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
@@ -16,12 +15,12 @@ extern crate toml;
 pub mod config;
 mod driver;
 mod github;
+mod utils;
 
 pub use config::Config;
 pub use driver::Driver;
 pub use github::GitHub;
 
-use std::path::Path;
 use failure::{Error, SyncFailure};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -37,9 +36,6 @@ pub trait Provider {
 
     /// Get an iterator over all the available repositories.
     fn repositories(&self) -> Result<Vec<Repo>, Error>;
-
-    /// Download a specific repo.
-    fn download(&self, repo: &Repo, destination: &Path) -> Result<(), Error>;
 }
 
 trait SyncResult<T, E> {

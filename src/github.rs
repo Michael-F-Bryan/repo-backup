@@ -1,23 +1,20 @@
-use std::path::Path;
 use std::fmt::{self, Debug, Formatter};
-use github_rs::client::{Executor, Github as GhClient};
 use failure::{Error, ResultExt};
 
 use config::GithubConfig;
-use {Provider, Repo, SyncResult};
+use utils::Paginated;
+use {Provider, Repo};
 
 #[derive(Clone)]
 pub struct GitHub {
-    client: GhClient,
+    api_key: String,
 }
 
 impl GitHub {
-    pub fn with_config(cfg: GithubConfig) -> Result<GitHub, Error> {
-        let client = GhClient::new(&cfg.api_key)
-            .sync()
-            .context("Invalid API token")?;
-
-        Ok(GitHub { client })
+    pub fn with_config(cfg: GithubConfig) -> GitHub {
+        GitHub {
+            api_key: cfg.api_key,
+        }
     }
 }
 
@@ -30,32 +27,22 @@ impl Provider for GitHub {
         let mut repos = Vec::new();
 
         debug!("Fetching owned repositories");
-        let (headers, status, got) = self.client
-            .get()
-            .user()
-            .repos()
-            .execute::<Vec<RawRepo>>()
-            .sync()?;
 
-        if log_enabled!(::log::Level::Trace) {
-            trace!("Status Code: {}, {:?}", status.as_u16(), status);
-            for line in format!("Headers {:#?}", headers).lines() {
-                trace!("{}", line);
-            }
-        }
+        let owned = Paginated::new(&self.api_key, "https://api.github.com/user/repos")
+            .collect::<Result<Vec<RawRepo>, Error>>()
+            .context("Unable to fetch owned repositories")?;
 
-        if let Some(owned) = got {
-            debug!("Found {} owned repos", owned.len());
-            repos.extend(owned.into_iter().map(Into::into));
-        } else {
-            debug!("No owned repos found");
-        }
+        debug!("{} owned repos", owned.len());
+        repos.extend(owned.into_iter().map(Into::into));
+
+        let starred = Paginated::new(&self.api_key, "https://api.github.com/user/starred")
+            .collect::<Result<Vec<RawRepo>, Error>>()
+            .context("Unable to fetch starred repositories")?;
+
+        debug!("{} starred repos", starred.len());
+        repos.extend(starred.into_iter().map(Into::into));
 
         Ok(repos)
-    }
-
-    fn download(&self, repo: &Repo, destination: &Path) -> Result<(), Error> {
-        unimplemented!()
     }
 }
 
@@ -69,8 +56,6 @@ impl Debug for GitHub {
 #[serde(default)]
 struct RawRepo {
     name: String,
-    full_name: String,
-    description: Option<String>,
     clone_url: String,
     owner: Owner,
 }
@@ -79,13 +64,12 @@ struct RawRepo {
 #[serde(default)]
 struct Owner {
     login: String,
-    #[serde(rename = "type")]
-    kind: String,
+    #[serde(rename = "type")] kind: String,
 }
 
 impl From<RawRepo> for Repo {
     fn from(other: RawRepo) -> Repo {
-        Repo { 
+        Repo {
             name: other.name,
             owner: other.owner.login,
             url: other.clone_url,
