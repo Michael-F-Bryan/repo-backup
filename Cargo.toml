@@ -1,20 +1,21 @@
 [package]
 authors = ["Michael Bryan <michaelfbryan@gmail.com>"]
 description = "A program for backing up your GitHub repos."
-name = "repo-backup"
-version = "0.2.1-alpha.0"
-license = "MIT"
 documentation = "https://docs.rs/repo-backup"
+license = "MIT"
+name = "repo-backup"
 repository = "https://github.com/Michael-F-Bryan/repo-backup"
-
-[badges]
-travis-ci = { repository = "Michael-F-Bryan/repo-backup" }
-appveyor = { repository = "Michael-F-Bryan/repo-backup" }
+version = "0.2.1-alpha.0"
 
 [[bin]]
 doc = false
 name = "repo-backup"
 path = "src/bin/repo-backup.rs"
+[badges.appveyor]
+repository = "Michael-F-Bryan/repo-backup"
+
+[badges.travis-ci]
+repository = "Michael-F-Bryan/repo-backup"
 
 [dependencies]
 chrono = "0.4.0"
@@ -22,6 +23,7 @@ env_logger = "0.5.0-rc.1"
 failure = "0.1.1"
 failure_derive = "0.1.1"
 git2 = "0.6.9"
+gitlab = "0.1001.0"
 log = "0.4.0-rc.1"
 reqwest = "0.8.1"
 serde = "1.0.24"

@@ -14,6 +14,8 @@ pub struct Config {
     pub general: General,
     /// Settings specific to the `Github` provider.
     pub github: Option<GithubConfig>,
+    /// Settings for the `Gitlab` provider.
+    pub gitlab: Option<GitlabConfig>,
 }
 
 /// General settings used by `repo-backup`.
@@ -42,8 +44,29 @@ pub struct GithubConfig {
     pub owned: bool,
 }
 
+/// Github-specific settings.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct GitlabConfig {
+    /// The API key to use.
+    pub api_key: String,
+    /// URL of the Gitlab instance to fetch repositories from.
+    pub url: String,
+    /// Should we download all repos owned by organisations you are a part of?
+    /// (default: false)
+    #[serde(default = "always_false")]
+    pub organisations: bool,
+    /// Should we download all owned repos? (default: true)
+    #[serde(default = "always_true")]
+    pub owned: bool,
+}
+
 fn always_true() -> bool {
     true
+}
+
+fn always_false() -> bool {
+    false
 }
 
 impl Config {
@@ -78,6 +101,12 @@ impl Config {
                 api_key: String::from("your API key"),
                 owned: true,
                 starred: false,
+            }),
+            gitlab: Some(GitlabConfig {
+                api_key: String::from("your API key"),
+                url: String::from("https://gitlab.com/"),
+                organisations: true,
+                owned: true,
             }),
         }
     }

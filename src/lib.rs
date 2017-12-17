@@ -24,6 +24,12 @@
 //! api-key = "your API key"
 //! owned = true
 //! starred = false
+//!
+//! [gitlab]
+//! api-key = "your API key"
+//! url = "https://gitlab.com/"
+//! organisations = true
+//! owned = true
 //! # "#;
 //! # let example = Config::from_str(src).unwrap();
 //! # assert_eq!(example, Config::example());
@@ -113,6 +119,7 @@ extern crate failure;
 #[macro_use]
 extern crate failure_derive;
 extern crate git2;
+extern crate gitlab;
 #[macro_use]
 extern crate log;
 extern crate reqwest;
@@ -126,10 +133,12 @@ pub mod config;
 mod driver;
 mod github;
 mod utils;
+mod gitlab_provider;
 
 pub use config::Config;
 pub use driver::{Driver, UpdateFailure};
 pub use github::GitHub;
+pub use gitlab_provider::Gitlab;
 
 use failure::{Error, SyncFailure};
 

@@ -1,11 +1,13 @@
 use std::io::Write;
 use std::path::Path;
 use failure::{Error, ResultExt};
-use git2::{AutotagOption, FetchOptions, FetchPrune, RemoteCallbacks, Repository};
+use git2::{AutotagOption, Cred, CredentialType, FetchOptions, FetchPrune, RemoteCallbacks,
+           Repository};
 use git2::build::RepoBuilder;
 
 use config::Config;
 use github::GitHub;
+use gitlab_provider::Gitlab;
 use {Provider, Repo};
 
 /// A driver for orchestrating the process of fetching a list of repositories
@@ -44,6 +46,11 @@ impl Driver {
             if let Err(e) = self.update_repo(repo) {
                 warn!("Updating {} failed, {}", repo.name, e);
                 errors.push((repo.clone(), e));
+            }
+
+            if errors.len() >= 10 {
+                error!("Too many errors, bailing...");
+                break;
             }
         }
 
@@ -99,9 +106,7 @@ fn clone_repo(dest_dir: &Path, repo: &Repo) -> Result<(), Error> {
         .prune(FetchPrune::On)
         .download_tags(AutotagOption::All);
 
-    if let Some(cb) = logging_cb(repo) {
-        fetch_opts.remote_callbacks(cb);
-    }
+    fetch_opts.remote_callbacks(configure_callbacks(repo));
 
     builder
         .fetch_options(fetch_opts)
@@ -111,9 +116,8 @@ fn clone_repo(dest_dir: &Path, repo: &Repo) -> Result<(), Error> {
 
 /// If we are logging at `trace` level, get a `RemoteCallbacks` which will print
 /// a progress message.
-fn logging_cb<'a>(repo: &'a Repo) -> Option<RemoteCallbacks<'a>> {
+fn register_logging_cb<'a>(cb: &mut RemoteCallbacks<'a>, repo: &'a Repo) {
     if log_enabled!(::log::Level::Trace) {
-        let mut cb = RemoteCallbacks::new();
         let repo_name = repo.full_name();
 
         cb.transfer_progress(move |progress| {
@@ -126,10 +130,34 @@ fn logging_cb<'a>(repo: &'a Repo) -> Option<RemoteCallbacks<'a>> {
             );
             true
         });
-        Some(cb)
-    } else {
-        None
     }
+}
+
+fn cred_callback(
+    url: &str,
+    username_from_url: Option<&str>,
+    allowed_types: CredentialType,
+) -> Result<Cred, ::git2::Error> {
+    // FIXME: This currently isn't authenticating :(
+    debug!("Supplying credentials for {}", url);
+    trace!("Allowed types: {:?}", allowed_types);
+
+    if let Some(username) = username_from_url {
+        if let Ok(creds) = Cred::username(username) {
+            return Ok(creds);
+        }
+    }
+
+    Cred::ssh_key_from_agent("michael").or_else(|_| Cred::default())
+}
+
+fn configure_callbacks(repo: &Repo) -> RemoteCallbacks {
+    let mut cb = RemoteCallbacks::new();
+
+    register_logging_cb(&mut cb, repo);
+    cb.credentials(cred_callback);
+
+    cb
 }
 
 fn fetch_updates(dest_dir: &Path, repo: &Repo) -> Result<(), Error> {
@@ -144,9 +172,7 @@ fn fetch_updates(dest_dir: &Path, repo: &Repo) -> Result<(), Error> {
         .prune(FetchPrune::On)
         .download_tags(AutotagOption::All);
 
-    if let Some(cb) = logging_cb(repo) {
-        fetch_opts.remote_callbacks(cb);
-    }
+    fetch_opts.remote_callbacks(configure_callbacks(repo));
 
     remote
         .download(&[], Some(&mut fetch_opts))
@@ -217,6 +243,11 @@ fn get_providers(cfg: &Config) -> Result<Vec<Box<Provider>>, Error> {
     if let Some(gh_config) = cfg.github.as_ref() {
         let gh = GitHub::with_config(gh_config.clone());
         providers.push(Box::new(gh));
+    }
+
+    if let Some(gl_config) = cfg.gitlab.as_ref() {
+        let gl = Gitlab::with_config(gl_config.clone())?;
+        providers.push(Box::new(gl));
     }
 
     if providers.is_empty() {
