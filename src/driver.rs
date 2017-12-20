@@ -1,9 +1,7 @@
 use std::io::Write;
 use std::path::Path;
-use failure::{Error, ResultExt};
-use git2::{AutotagOption, Cred, CredentialType, FetchOptions, FetchPrune, RemoteCallbacks,
-           Repository};
-use git2::build::RepoBuilder;
+use std::process::Command;
+use failure::{self, Error, ResultExt};
 
 use config::Config;
 use github::GitHub;
@@ -62,13 +60,14 @@ impl Driver {
     }
 
     fn update_repo(&self, repo: &Repo) -> Result<(), Error> {
-        debug!("Updating {}", repo.full_name());
         let dest_dir = self.config.general.dest_dir.join(repo.full_name());
 
         if dest_dir.exists() {
-            fetch_updates(&dest_dir, repo).context("`git fetch` failed")?;
+            debug!("Fetching updates for {}", repo.full_name());
+            fetch_updates(&dest_dir)?;
         } else {
-            clone_repo(&dest_dir, repo).context("`git clone` failed")?;
+            debug!("Cloning into {}", dest_dir.display());
+            clone_repo(&dest_dir, repo)?;
         }
 
         Ok(())
@@ -97,117 +96,37 @@ impl Driver {
 }
 
 fn clone_repo(dest_dir: &Path, repo: &Repo) -> Result<(), Error> {
-    debug!("Cloning into {}", dest_dir.display());
+    let output = Command::new("git")
+        .arg("clone")
+        .arg("--quiet")
+        .arg(&repo.url)
+        .arg(dest_dir)
+        .output()
+        .context("Unable to execute `git clone`. Is git installed?")?;
 
-    let mut builder = RepoBuilder::new();
-
-    let mut fetch_opts = FetchOptions::new();
-    fetch_opts
-        .prune(FetchPrune::On)
-        .download_tags(AutotagOption::All);
-
-    fetch_opts.remote_callbacks(configure_callbacks(repo));
-
-    builder
-        .fetch_options(fetch_opts)
-        .clone(&repo.url, dest_dir)?;
-    Ok(())
-}
-
-/// If we are logging at `trace` level, get a `RemoteCallbacks` which will print
-/// a progress message.
-fn register_logging_cb<'a>(cb: &mut RemoteCallbacks<'a>, repo: &'a Repo) {
-    if log_enabled!(::log::Level::Trace) {
-        let repo_name = repo.full_name();
-
-        cb.transfer_progress(move |progress| {
-            trace!(
-                "{} downloaded {}/{} objects ({} bytes)",
-                repo_name,
-                progress.received_objects(),
-                progress.total_objects(),
-                progress.received_bytes()
-            );
-            true
-        });
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(failure::err_msg("`git clone` failed"))
     }
 }
 
-fn cred_callback(
-    url: &str,
-    username_from_url: Option<&str>,
-    allowed_types: CredentialType,
-) -> Result<Cred, ::git2::Error> {
-    // FIXME: This currently isn't authenticating :(
-    debug!("Supplying credentials for {}", url);
-    trace!("Allowed types: {:?}", allowed_types);
+fn fetch_updates(dest_dir: &Path) -> Result<(), Error> {
+    let output = Command::new("git")
+        .arg("pull")
+        .arg("--ff-only")
+        .arg("--prune")
+        .arg("--quiet")
+        .arg("--recurse-submodules")
+        .current_dir(dest_dir)
+        .output()
+        .context("Unable to execute `git pull`. Is git installed?")?;
 
-    if let Some(username) = username_from_url {
-        if let Ok(creds) = Cred::username(username) {
-            return Ok(creds);
-        }
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(failure::err_msg("`git pull` failed"))
     }
-
-    Cred::ssh_key_from_agent("michael").or_else(|_| Cred::default())
-}
-
-fn configure_callbacks(repo: &Repo) -> RemoteCallbacks {
-    let mut cb = RemoteCallbacks::new();
-
-    register_logging_cb(&mut cb, repo);
-    cb.credentials(cred_callback);
-
-    cb
-}
-
-fn fetch_updates(dest_dir: &Path, repo: &Repo) -> Result<(), Error> {
-    let git_repo = Repository::open(dest_dir).context("Not a git repository")?;
-    let mut remote = git_repo
-        .find_remote("origin")
-        .or_else(|_| git_repo.remote_anonymous("origin"))
-        .context("The repo has no `origin` remote")?;
-
-    let mut fetch_opts = FetchOptions::default();
-    fetch_opts
-        .prune(FetchPrune::On)
-        .download_tags(AutotagOption::All);
-
-    fetch_opts.remote_callbacks(configure_callbacks(repo));
-
-    remote
-        .download(&[], Some(&mut fetch_opts))
-        .context("Download failed")?;
-
-    if remote.stats().received_bytes() != 0 {
-        let stats = remote.stats();
-        if stats.local_objects() > 0 {
-            debug!(
-                "Received {} objects in {} bytes for {} (used {} local \
-                 objects)",
-                stats.indexed_objects(),
-                stats.received_bytes(),
-                repo.full_name(),
-                stats.local_objects()
-            );
-        } else {
-            debug!(
-                "Received {} objects in {} bytes for {}",
-                stats.indexed_objects(),
-                stats.received_bytes(),
-                repo.full_name()
-            );
-        }
-    }
-
-    remote.disconnect();
-
-    // Update the references in the remote's namespace to point to the right
-    // commits. This may be needed even if there was no packfile to download,
-    // which can happen e.g. when the branches have been changed but all the
-    // needed objects are available locally.
-    remote.update_tips(None, true, AutotagOption::Unspecified, None)?;
-
-    Ok(())
 }
 
 /// A wrapper around one or more failures during the updating process.
