@@ -108,18 +108,6 @@ Configuration is done via a `repo-backup.toml` file. By default the
 `repo-backup` program will look for this in your home directory (as
 `~/.repo-backup.toml`), but this can be overridden via the command line.
 
-The configuration file looks something like this:
-
-```toml
-[general]
-dest-dir = "/srv"
-
-[github]
-api-key = "your API key"
-owned = true
-starred = false
-```
-
 The only required table is `general`, with the others used to enable and
 configure the corresponding `Provider`.
 

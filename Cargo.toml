@@ -1,6 +1,6 @@
 [package]
 authors = ["Michael Bryan <michaelfbryan@gmail.com>"]
-description = "A program for backing up your GitHub repos."
+description = "A program for backing up your GitHub and GitLab repos."
 documentation = "https://docs.rs/repo-backup"
 license = "MIT"
 name = "repo-backup"
