@@ -129,10 +129,11 @@ extern crate serde_derive;
 extern crate serde_json;
 extern crate toml;
 
+#[macro_use]
+mod utils;
 pub mod config;
 mod driver;
 mod github;
-mod utils;
 mod gitlab_provider;
 
 pub use config::Config;

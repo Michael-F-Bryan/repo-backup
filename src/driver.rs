@@ -1,7 +1,6 @@
 use std::io::Write;
 use std::path::Path;
-use std::process::Command;
-use failure::{self, Error, ResultExt};
+use failure::{Error, ResultExt};
 
 use config::Config;
 use github::GitHub;
@@ -96,37 +95,12 @@ impl Driver {
 }
 
 fn clone_repo(dest_dir: &Path, repo: &Repo) -> Result<(), Error> {
-    let output = Command::new("git")
-        .arg("clone")
-        .arg("--quiet")
-        .arg(&repo.url)
-        .arg(dest_dir)
-        .output()
-        .context("Unable to execute `git clone`. Is git installed?")?;
-
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(failure::err_msg("`git clone` failed"))
-    }
+    cmd!("git clone --quiet {} {}", &repo.url, dest_dir.display())
 }
 
 fn fetch_updates(dest_dir: &Path) -> Result<(), Error> {
-    let output = Command::new("git")
-        .arg("pull")
-        .arg("--ff-only")
-        .arg("--prune")
-        .arg("--quiet")
-        .arg("--recurse-submodules")
-        .current_dir(dest_dir)
-        .output()
-        .context("Unable to execute `git pull`. Is git installed?")?;
-
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(failure::err_msg("`git pull` failed"))
-    }
+    cmd!(in dest_dir; "git clone {}", "asd")?;
+    cmd!(in dest_dir; "git pull --ff-only --prune --quiet --recurse-submodules")
 }
 
 /// A wrapper around one or more failures during the updating process.

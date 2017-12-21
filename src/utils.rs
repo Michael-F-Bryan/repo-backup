@@ -8,6 +8,88 @@ use reqwest::header::{qitem, Accept, Authorization, ContentType, Link, LinkValue
                       UserAgent};
 use failure::{Error, ResultExt};
 
+
+/// A convenient command runner. 
+/// 
+/// It behaves like the `format!()` macro, then splits the input string up like
+/// your shell would before running the command and inspecting its output to
+/// ensure everything was successful.
+/// 
+/// # Examples
+/// 
+/// ```rust,no_run
+/// #[macro_use]
+/// extern crate repo_backup;
+/// # extern crate failure;
+/// # #[macro_use]
+/// # extern crate log;
+/// 
+/// # fn run() -> Result<(), Box<::std::error::Error>> {
+/// let some_url = "https://github.com/Michael-F-Bryan/repo-backup";
+/// cmd!(in "/path/to/dir/"; "git clone {}", some_url)?;
+/// # Ok(())
+/// # }
+/// # fn main() { run().unwrap() }
+/// ```
+#[macro_export]
+macro_rules! cmd {
+    (in $cwd:expr; $format:expr, $arg:expr) => {
+        cmd!(in $cwd; format!($format, $arg))
+    };
+    (in $cwd:expr; $command:expr) => {{
+        use ::failure::ResultExt;
+
+        let command = String::from($command);
+        trace!("Executing `{}`", command);
+        let arguments: Vec<_> = command.split_whitespace().collect();
+
+        let mut cmd_builder = ::std::process::Command::new(&arguments[0]);
+        cmd_builder.current_dir($cwd);
+
+        for arg in &arguments[1..] {
+            cmd_builder.arg(arg);
+        }
+
+        cmd_builder.output()
+            .with_context(|_| format!("Unable to execute `{}`. Is {} installed?", command, &arguments[0]))
+            .map_err(::failure::Error::from)
+            .and_then(|output| {
+                // If the command runs then we need to do a bunch of error 
+                // checking, making sure to let the user know why the command 
+                // failed along with the command's stdout/stderr
+                if output.status.success() {
+                    Ok(())
+                } else {
+                    match output.status.code() {
+                        Some(code) => warn!("`{}` failed with return code {}", command, code),
+                        None => warn!("`{}` failed", command),
+                    }
+
+                    if !output.stderr.is_empty() {
+                        debug!("Stderr:");
+                        for line in String::from_utf8_lossy(&output.stderr).lines() {
+                            debug!("\t{}", line);
+                        }
+                    }
+                    if !output.stdout.is_empty() {
+                        debug!("Stdout:");
+                        for line in String::from_utf8_lossy(&output.stdout).lines() {
+                            debug!("\t{}", line);
+                        }
+                    }
+
+                    Err(::failure::err_msg(format!("`{}` failed", command)))
+                }
+            })
+    }};
+    ($format:expr, $($arg:expr),*) => {
+        cmd!(format!($format, $($arg),*))
+    };
+    ($command:expr) => {
+        cmd!(in "."; $command)
+    };
+}
+
 pub struct Paginated<I>
 where
     I: for<'de> Deserialize<'de>,
