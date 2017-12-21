@@ -4,7 +4,7 @@ use failure::{Error, ResultExt};
 
 use config::Config;
 use github::GitHub;
-use gitlab_provider::Gitlab;
+use gitlab_provider::GitLab;
 use {Provider, Repo};
 
 /// A driver for orchestrating the process of fetching a list of repositories
@@ -138,7 +138,7 @@ fn get_providers(cfg: &Config) -> Result<Vec<Box<Provider>>, Error> {
     }
 
     if let Some(gl_config) = cfg.gitlab.as_ref() {
-        let gl = Gitlab::with_config(gl_config.clone())?;
+        let gl = GitLab::with_config(gl_config.clone())?;
         providers.push(Box::new(gl));
     }
 

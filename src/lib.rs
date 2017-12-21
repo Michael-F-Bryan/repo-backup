@@ -3,7 +3,8 @@
 //!
 //! Sources currently supported:
 //!
-//! - [GitHub](https://github.com/)
+//! - [GitHub](https://github.com/) ([Provider](./struct.GitHub.html))
+//! - [GitLab](https://about.gitlab.com/) ([Provider](./struct.GitLab.html))
 //!
 //!
 //! # Configuration
@@ -139,7 +140,7 @@ mod gitlab_provider;
 pub use config::Config;
 pub use driver::{Driver, UpdateFailure};
 pub use github::GitHub;
-pub use gitlab_provider::Gitlab;
+pub use gitlab_provider::GitLab;
 
 use failure::{Error, SyncFailure};
 

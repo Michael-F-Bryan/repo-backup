@@ -1,24 +1,24 @@
 use failure::{Error, ResultExt};
 use gitlab::{Gitlab as Client, Project};
 
-use config::GitlabConfig;
+use config::GitLabConfig;
 use {Provider, Repo, SyncResult};
 
-/// A provider which queries the Gitlab API.
+/// A provider which queries the GitLab API.
 #[derive(Debug)]
-pub struct Gitlab {
+pub struct GitLab {
     client: Client,
-    cfg: GitlabConfig,
+    cfg: GitLabConfig,
 }
 
-impl Gitlab {
-    /// Create a new `Gitlab` provider using its config.
-    pub fn with_config(cfg: GitlabConfig) -> Result<Gitlab, Error> {
+impl GitLab {
+    /// Create a new `GitLab` provider using its config.
+    pub fn with_config(cfg: GitLabConfig) -> Result<GitLab, Error> {
         let client = Client::new(&cfg.url, cfg.api_key.reveal_str())
             .sync()
             .context("Invalid API key")?;
 
-        Ok(Gitlab { client, cfg })
+        Ok(GitLab { client, cfg })
     }
 
     fn get_owned(&self) -> Result<Vec<Repo>, Error> {
@@ -43,7 +43,7 @@ impl Gitlab {
             .sync()
             .context("Unable to get the name of the current user")?
             .username;
-        trace!("Current Gitlab user is {}", current_user);
+        trace!("Current GitLab user is {}", current_user);
 
         let all_repos = self.client.projects().sync()?;
 
@@ -74,7 +74,7 @@ impl Gitlab {
     }
 }
 
-impl Provider for Gitlab {
+impl Provider for GitLab {
     fn name(&self) -> &str {
         "gitlab"
     }

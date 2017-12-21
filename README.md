@@ -10,6 +10,7 @@ of various sources.
 Sources currently supported:
 
 - [GitHub](https://github.com/)
+- [GitLab](https://about.gitlab.com/)
 
 
 ## Getting Started
