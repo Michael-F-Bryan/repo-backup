@@ -99,7 +99,6 @@ fn clone_repo(dest_dir: &Path, repo: &Repo) -> Result<(), Error> {
 }
 
 fn fetch_updates(dest_dir: &Path) -> Result<(), Error> {
-    cmd!(in dest_dir; "git clone {}", "asd")?;
     cmd!(in dest_dir; "git pull --ff-only --prune --quiet --recurse-submodules")
 }
 
