@@ -2,6 +2,9 @@
 
 [![Build Status](https://travis-ci.org/Michael-F-Bryan/repo-backup.svg?branch=master)](https://travis-ci.org/Michael-F-Bryan/repo-backup)
 [![Build status](https://ci.appveyor.com/api/projects/status/9ik2qiov3l2buyqd?svg=true)](https://ci.appveyor.com/project/Michael-F-Bryan/repo-backup)
+[![Crates.io](https://img.shields.io/crates/v/repo-backup.svg)](https://crates.io/crates/repo-backup)
+[![Docs](https://docs.rs/repo-backup/badge.svg)](https://docs.rs/repo-backup)
+![License](https://img.shields.io/github/license/Michael-F-Bryan/repo-backup.svg)
 
 
 A small utility for making a local copy of all your projects from a variety
