@@ -108,8 +108,8 @@ fn initialize_logging(args: &Args) -> Result<(), Error> {
         builder.parse(&filter);
     }
 
-    builder.format(|out, record| match record.line() {
-        Some(line) => writeln!(
+    builder.format(|out, record| match (record.line(), cfg!(debug_assertions)) {
+        (Some(line), true) => writeln!(
             out,
             "{} [{:5}] ({}#{}): {}",
             Local::now().format("%Y-%m-%d %H:%M:%S"),
@@ -118,12 +118,11 @@ fn initialize_logging(args: &Args) -> Result<(), Error> {
             line,
             record.args()
         ),
-        None => writeln!(
+        _ => writeln!(
             out,
-            "{} [{:5}] ({}): {}",
+            "{} [{:5}]: {}",
             Local::now().format("%Y-%m-%d %H:%M:%S"),
             record.level(),
-            record.target(),
             record.args()
         ),
     });
