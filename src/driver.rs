@@ -10,7 +10,7 @@ use {Provider, Repo};
 
 /// A driver for orchestrating the process of fetching a list of repositories
 /// and then downloading each of them.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Driver {
     config: Config,
 }

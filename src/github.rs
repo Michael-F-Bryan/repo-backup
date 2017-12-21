@@ -22,7 +22,10 @@ impl GitHub {
 
         let mut owned = Vec::new();
 
-        for repo in Paginated::new(&self.cfg.api_key, "https://api.github.com/user/repos") {
+        for repo in Paginated::new(
+            self.cfg.api_key.reveal_str(),
+            "https://api.github.com/user/repos",
+        ) {
             let repo: RawRepo = repo?;
             owned.push(self.convert_repo(repo));
         }
@@ -36,7 +39,10 @@ impl GitHub {
 
         let mut starred = Vec::new();
 
-        for repo in Paginated::new(&self.cfg.api_key, "https://api.github.com/user/starred") {
+        for repo in Paginated::new(
+            self.cfg.api_key.reveal_str(),
+            "https://api.github.com/user/starred",
+        ) {
             let repo: RawRepo = repo?;
             starred.push(self.convert_repo(repo));
         }

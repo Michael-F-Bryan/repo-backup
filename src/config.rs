@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::io::Read;
 use std::fs::File;
+use sec::Secret;
 
 use failure::{Error, ResultExt};
 use toml;
@@ -35,7 +36,7 @@ pub struct GithubConfig {
     /// fetch repos from GitHub.
     ///
     /// [new]: https://github.com/settings/tokens/new
-    pub api_key: String,
+    pub api_key: Secret<String>,
     /// Should we download all starred repos? (default: true)
     #[serde(default = "always_true")]
     pub starred: bool,
@@ -49,7 +50,7 @@ pub struct GithubConfig {
 #[serde(rename_all = "kebab-case")]
 pub struct GitlabConfig {
     /// The API key to use.
-    pub api_key: String,
+    pub api_key: Secret<String>,
     /// URL of the Gitlab instance to fetch repositories from.
     pub url: String,
     /// Should we download all repos owned by organisations you are a part of?
@@ -98,12 +99,12 @@ impl Config {
                 dest_dir: PathBuf::from("/srv"),
             },
             github: Some(GithubConfig {
-                api_key: String::from("your API key"),
+                api_key: String::from("your API key").into(),
                 owned: true,
                 starred: false,
             }),
             gitlab: Some(GitlabConfig {
-                api_key: String::from("your API key"),
+                api_key: String::from("your API key").into(),
                 url: String::from("https://gitlab.com/"),
                 organisations: true,
                 owned: true,

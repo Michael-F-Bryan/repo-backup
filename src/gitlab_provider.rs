@@ -14,7 +14,7 @@ pub struct Gitlab {
 impl Gitlab {
     /// Create a new `Gitlab` provider using its config.
     pub fn with_config(cfg: GitlabConfig) -> Result<Gitlab, Error> {
-        let client = Client::new(&cfg.url, &cfg.api_key)
+        let client = Client::new(&cfg.url, cfg.api_key.reveal_str())
             .sync()
             .context("Invalid API key")?;
 

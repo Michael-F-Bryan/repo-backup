@@ -122,6 +122,7 @@ extern crate gitlab;
 #[macro_use]
 extern crate log;
 extern crate reqwest;
+extern crate sec;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
