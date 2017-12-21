@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+---
+
+## 0.2.1 (2017-12-21)
+
 ### Added
 
 - Added a GitLab `Provider` for fetching owned repositories and those belonging
@@ -14,6 +18,7 @@
 
 - Logging no longer prints the module and line number 
 
+---
 
 ## 0.2.0 (2017-12-17)
 
@@ -27,6 +32,7 @@ repositories (a `Provider`) from the list of repositories being downloaded.
 - Added a GitHub `Provider` for fetching owned and starred repositories
 - You can use the `--example-config` flag to generate an example config file
 
+---
 
 ## 0.1.0 (2017-07-20)
 
