@@ -67,7 +67,7 @@ $ repo-backup -v
 
 This tool is designed to avoid superfluous output and only print messages to
 the terminal when there is an issue (sometimes known as ["the rule of silence"]
-from the *Unix Philosophy*). However, you can tell it to be more verbose by
+in the *Unix Philosophy*). However, you can tell it to be more verbose by
 adding consecutively more `-v` flags.
 
 The generated tree structure looks something like this (with a couple hundred
@@ -133,3 +133,7 @@ configure the corresponding `Provider`.
 > starred = false
 > owned = true
 > ```
+
+[GitHub Releases]: https://github.com/Michael-F-Bryan/repo-backup/releases
+[Rust]: https://www.rust-lang.org/en-US/
+["the rule of silence"]: http://www.linfo.org/rule_of_silence.html
