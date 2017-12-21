@@ -135,7 +135,16 @@ configure the corresponding `Provider`.
 > api-key = 'your API key'
 > starred = false
 > owned = true
+> 
+> [gitlab]
+> api-key = 'your API key'
+> url = 'https://gitlab.com/'
+> organisations = true
+> owned = true
 > ```
+>
+> In general, all `Provider` specific keys are optional, with the exception of
+> an `api-key`.
 
 [GitHub Releases]: https://github.com/Michael-F-Bryan/repo-backup/releases
 [Rust]: https://www.rust-lang.org/en-US/
