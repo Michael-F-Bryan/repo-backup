@@ -52,6 +52,7 @@ pub struct GitLabConfig {
     /// The API key to use.
     pub api_key: Secret<String>,
     /// URL of the GitLab instance to fetch repositories from.
+    #[serde(default = "default_gitlab_url")]
     pub url: String,
     /// Should we download all repos owned by organisations you are a part of?
     /// (default: false)
@@ -68,6 +69,10 @@ fn always_true() -> bool {
 
 fn always_false() -> bool {
     false
+}
+
+fn default_gitlab_url() -> String {
+    String::from("https://gitlab.com/")
 }
 
 impl Config {
