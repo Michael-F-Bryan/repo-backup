@@ -8,22 +8,21 @@ use reqwest::header::{qitem, Accept, Authorization, ContentType, Link, LinkValue
                       UserAgent};
 use failure::{Error, ResultExt};
 
-
-/// A convenient command runner. 
-/// 
+/// A convenient command runner.
+///
 /// It behaves like the `format!()` macro, then splits the input string up like
 /// your shell would before running the command and inspecting its output to
 /// ensure everything was successful.
-/// 
+///
 /// # Examples
-/// 
+///
 /// ```rust,no_run
 /// #[macro_use]
 /// extern crate repo_backup;
 /// # extern crate failure;
 /// # #[macro_use]
 /// # extern crate log;
-/// 
+///
 /// # fn run() -> Result<(), Box<::std::error::Error>> {
 /// let some_url = "https://github.com/Michael-F-Bryan/repo-backup";
 /// cmd!(in "/path/to/dir/"; "git clone {}", some_url)?;
@@ -54,8 +53,8 @@ macro_rules! cmd {
             .with_context(|_| format!("Unable to execute `{}`. Is {} installed?", command, &arguments[0]))
             .map_err(::failure::Error::from)
             .and_then(|output| {
-                // If the command runs then we need to do a bunch of error 
-                // checking, making sure to let the user know why the command 
+                // If the command runs then we need to do a bunch of error
+                // checking, making sure to let the user know why the command
                 // failed along with the command's stdout/stderr
                 if output.status.success() {
                     Ok(())
@@ -129,8 +128,8 @@ where
             .context("Generated invalid request. This is a bug.")?;
 
         if log_enabled!(::log::Level::Trace) {
-            let redacted_header = format!("Request Headers {:#?}", request.headers())
-                .replace(&self.token, "...");
+            let redacted_header =
+                format!("Request Headers {:#?}", request.headers()).replace(&self.token, "...");
 
             for line in redacted_header.lines() {
                 trace!("{}", line);

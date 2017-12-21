@@ -34,6 +34,3 @@ structopt = "0.1.6"
 structopt-derive = "0.1.6"
 toml = "0.4.5"
 sec = { version = "0.99.0", features = ["deserialize", "serialize"] }
-
-[patch.crates-io]
-sec = { git = "https://github.com/Michael-F-Bryan/sec-rs", branch = "more-impls" }

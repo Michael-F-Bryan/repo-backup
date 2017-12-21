@@ -28,7 +28,7 @@ pub struct General {
 }
 
 /// Github-specific settings.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct GithubConfig {
     /// The API key to use. You will need to [create a new personal access
@@ -46,7 +46,7 @@ pub struct GithubConfig {
 }
 
 /// Github-specific settings.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct GitLabConfig {
     /// The API key to use.
@@ -125,5 +125,22 @@ impl Config {
                 panic!("Serializing a Config should never fail. {}", e);
             }
         }
+    }
+}
+
+// TODO: remove these when the PartialEq PR lands
+// https://github.com/49nord/sec-rs/pull/2
+
+impl PartialEq for GithubConfig {
+    fn eq(&self, other: &GithubConfig) -> bool {
+        self.api_key.reveal() == other.api_key.reveal() && self.starred == other.starred
+            && self.owned == other.owned
+    }
+}
+
+impl PartialEq for GitLabConfig {
+    fn eq(&self, other: &GitLabConfig) -> bool {
+        self.api_key.reveal() == other.api_key.reveal() && self.url == other.url
+            && self.owned == other.owned && self.organisations == other.organisations
     }
 }
