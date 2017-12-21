@@ -11,6 +11,7 @@ version = "0.2.1-alpha.0"
 doc = false
 name = "repo-backup"
 path = "src/bin/repo-backup.rs"
+
 [badges.appveyor]
 repository = "Michael-F-Bryan/repo-backup"
 

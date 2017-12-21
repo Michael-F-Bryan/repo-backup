@@ -130,7 +130,7 @@ where
 
         if log_enabled!(::log::Level::Trace) {
             let redacted_header = format!("Request Headers {:#?}", request.headers())
-                .replace(&self.token, "XXXXXXXXXX");
+                .replace(&self.token, "...");
 
             for line in redacted_header.lines() {
                 trace!("{}", line);
