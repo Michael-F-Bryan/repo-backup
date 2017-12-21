@@ -9,8 +9,38 @@ of various sources.
 
 Sources currently supported:
 
-- [GitHub](https://github.com/)
-- [GitLab](https://about.gitlab.com/)
+<table>
+    <thead>
+        <tr>
+            <th>Provider</th>
+            <th>Available Repositories</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>
+                <a href="https://github.com"/>GitHub</a>
+            </td>
+            <td>
+                <ul>
+                    <li>owned</li>
+                    <li>starred</li>
+                </ul>
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <a href="https://about.gitlab.com"/>GitLab</a>
+            </td>
+            <td>
+                <ul>
+                    <li>owned</li>
+                    <li>repositories belonging to organisations you are a part of</li>
+                </ul>
+            </td>
+        </tr>
+    </tbody>
+</table>
 
 
 ## Getting Started
@@ -28,16 +58,45 @@ Once you have installed `repo-backup`, you can run it from the command line.
 
 ```
 $ repo-backup -v
-2017-12-17 02:01:42 [INFO ] (repo_backup::driver#28): Starting repository backup
-2017-12-17 02:01:42 [INFO ] (repo_backup::driver#79): Fetching repositories from github
-2017-12-17 02:01:49 [INFO ] (repo_backup::driver#84): Found 209 repos from github
-2017-12-17 02:01:49 [INFO ] (repo_backup::driver#40): Updating repositories
-2017-12-17 02:05:46 [INFO ] (repo_backup::driver#34): Finished repository backup
+2017-12-17 02:01:42 [INFO ]: Starting repository backup
+2017-12-17 02:01:42 [INFO ]: Fetching repositories from github
+2017-12-17 02:01:49 [INFO ]: Found 209 repos from github
+2017-12-17 02:01:49 [INFO ]: Updating repositories
+2017-12-17 02:05:46 [INFO ]: Finished repository backup
 ```
 
-Following [The Unix Philosophy], this tool is designed to avoid superfluous
-output and only print messages to the terminal when there is an issue. However,
-you can tell it to be more verbose by adding consecutively more `-v` flags.
+This tool is designed to avoid superfluous output and only print messages to
+the terminal when there is an issue (sometimes known as ["the rule of silence"]
+from the *Unix Philosophy*). However, you can tell it to be more verbose by
+adding consecutively more `-v` flags.
+
+The generated tree structure looks something like this (with a couple hundred
+directories elided for conciseness):
+
+```
+$ tree -L 3 /srv/
+/srv/
+├── github
+│   ├── BurntSushi
+│   │   └── ripgrep
+    ...
+│   ├── Michael-F-Bryan
+│   │   ├── rust-ffi-guide
+    ...
+│   │   └── repo-backup
+    ...
+│   └── yupferris
+│       └── rustendo64
+└── gitlab
+    ├── Curtin-Motorsport-Team
+    │   ├── CAN-node
+    ...
+    │   └── telemetry
+    └── Michael-F-Bryan
+        ├── dotfiles
+    ...
+        └── uni-work
+```
 
 
 ## Configuration
@@ -74,8 +133,3 @@ configure the corresponding `Provider`.
 > starred = false
 > owned = true
 > ```
-
-
-
-[GitHub Releases]: https://github.com/Michael-F-Bryan/repo-backup/releases
-[Rust]: https://www.rust-lang.org/en-US/
