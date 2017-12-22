@@ -6,6 +6,7 @@ license = "MIT"
 name = "repo-backup"
 repository = "https://github.com/Michael-F-Bryan/repo-backup"
 version = "0.2.2-alpha.0"
+readme = "README.md"
 
 [[bin]]
 doc = false
