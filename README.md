@@ -134,6 +134,17 @@ configure the corresponding `Provider`.
 > In general, all `Provider` specific keys are optional, with the exception of
 > an `api-key`.
 
+Most providers will require you to have an API key in order to access their API
+and retrieve a full list of backup targets. 
+
+For the *GitHub* provider You will need to create a new [personal access
+token][gh] and give it the public_repo permissions before you can fetch repos.
+The *GitLab* provider also requires you to create a [personal access token][gl]
+and give it the "api" scope.
+
+
 [GitHub Releases]: https://github.com/Michael-F-Bryan/repo-backup/releases
 [Rust]: https://www.rust-lang.org/en-US/
 ["the rule of silence"]: http://www.linfo.org/rule_of_silence.html
+[gh]: https://github.com/settings/tokens/new
+[gl]: https://gitlab.com/profile/personal_access_tokens

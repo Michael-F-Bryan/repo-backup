@@ -49,7 +49,10 @@ pub struct GithubConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct GitLabConfig {
-    /// The API key to use.
+    /// The API key to use. Make sure you create a new [personal access token][new]
+    /// and give it the "api" scope, if you haven't already.
+    ///
+    /// [new]: https://gitlab.com/profile/personal_access_tokens
     pub api_key: Secret<String>,
     /// URL of the GitLab instance to fetch repositories from.
     #[serde(default = "default_gitlab_url")]
