@@ -28,7 +28,7 @@
 //!
 //! [gitlab]
 //! api-key = "your API key"
-//! url = "https://gitlab.com/"
+//! host = "gitlab.com"
 //! organisations = true
 //! owned = true
 //! # "#;

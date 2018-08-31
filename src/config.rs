@@ -28,7 +28,7 @@ pub struct General {
 }
 
 /// Github-specific settings.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct GithubConfig {
     /// The API key to use. You will need to [create a new personal access
@@ -46,17 +46,18 @@ pub struct GithubConfig {
 }
 
 /// Github-specific settings.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[allow(deprecated)]
 pub struct GitLabConfig {
     /// The API key to use. Make sure you create a new [personal access token][new]
     /// and give it the "api" scope, if you haven't already.
     ///
     /// [new]: https://gitlab.com/profile/personal_access_tokens
     pub api_key: Secret<String>,
-    /// URL of the GitLab instance to fetch repositories from.
+    /// Hostname of the GitLab instance to fetch repositories from.
     #[serde(default = "default_gitlab_url")]
-    pub url: String,
+    pub host: String,
     /// Should we download all repos owned by organisations you are a part of?
     /// (default: false)
     #[serde(default = "always_false")]
@@ -113,7 +114,7 @@ impl Config {
             }),
             gitlab: Some(GitLabConfig {
                 api_key: String::from("your API key").into(),
-                url: String::from("https://gitlab.com/"),
+                host: String::from("gitlab.com"),
                 organisations: true,
                 owned: true,
             }),
@@ -128,25 +129,5 @@ impl Config {
                 panic!("Serializing a Config should never fail. {}", e);
             }
         }
-    }
-}
-
-// TODO: remove these when the PartialEq PR lands
-// https://github.com/49nord/sec-rs/pull/2
-
-impl PartialEq for GithubConfig {
-    fn eq(&self, other: &GithubConfig) -> bool {
-        self.api_key.reveal() == other.api_key.reveal()
-            && self.starred == other.starred
-            && self.owned == other.owned
-    }
-}
-
-impl PartialEq for GitLabConfig {
-    fn eq(&self, other: &GitLabConfig) -> bool {
-        self.api_key.reveal() == other.api_key.reveal()
-            && self.url == other.url
-            && self.owned == other.owned
-            && self.organisations == other.organisations
     }
 }

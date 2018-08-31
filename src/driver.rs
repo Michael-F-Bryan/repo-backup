@@ -125,7 +125,7 @@ impl UpdateFailure {
                 repo.full_name(),
                 err
             )?;
-            for cause in err.causes().skip(1) {
+            for cause in err.iter_causes() {
                 writeln!(writer, "\tCaused By: {}", cause)?;
             }
         }

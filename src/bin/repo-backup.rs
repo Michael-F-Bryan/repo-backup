@@ -6,8 +6,6 @@ extern crate log;
 extern crate repo_backup;
 extern crate shellexpand;
 extern crate structopt;
-#[macro_use]
-extern crate structopt_derive;
 
 use std::env;
 use std::io::{self, Write};
