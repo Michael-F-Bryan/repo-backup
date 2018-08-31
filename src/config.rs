@@ -1,9 +1,9 @@
 //! Configuration for `repo-backup`.
 
-use std::path::{Path, PathBuf};
-use std::io::Read;
-use std::fs::File;
 use sec::Secret;
+use std::fs::File;
+use std::io::Read;
+use std::path::{Path, PathBuf};
 
 use failure::{Error, ResultExt};
 use toml;
@@ -136,14 +136,17 @@ impl Config {
 
 impl PartialEq for GithubConfig {
     fn eq(&self, other: &GithubConfig) -> bool {
-        self.api_key.reveal() == other.api_key.reveal() && self.starred == other.starred
+        self.api_key.reveal() == other.api_key.reveal()
+            && self.starred == other.starred
             && self.owned == other.owned
     }
 }
 
 impl PartialEq for GitLabConfig {
     fn eq(&self, other: &GitLabConfig) -> bool {
-        self.api_key.reveal() == other.api_key.reveal() && self.url == other.url
-            && self.owned == other.owned && self.organisations == other.organisations
+        self.api_key.reveal() == other.api_key.reveal()
+            && self.url == other.url
+            && self.owned == other.owned
+            && self.organisations == other.organisations
     }
 }

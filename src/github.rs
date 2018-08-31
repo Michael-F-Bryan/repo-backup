@@ -1,5 +1,5 @@
-use std::fmt::{self, Debug, Formatter};
 use failure::{Error, ResultExt};
+use std::fmt::{self, Debug, Formatter};
 
 use config::GithubConfig;
 use utils::Paginated;
@@ -70,12 +70,16 @@ impl Provider for GitHub {
         let mut repos = Vec::new();
 
         if self.cfg.owned {
-            repos.extend(self.get_owned()
-                .context("Unable to fetch owned repositories")?);
+            repos.extend(
+                self.get_owned()
+                    .context("Unable to fetch owned repositories")?,
+            );
         }
         if self.cfg.starred {
-            repos.extend(self.get_starred()
-                .context("Unable to fetch starred repositories")?);
+            repos.extend(
+                self.get_starred()
+                    .context("Unable to fetch starred repositories")?,
+            );
         }
 
         Ok(repos)
@@ -100,5 +104,6 @@ struct RawRepo {
 #[serde(default)]
 struct Owner {
     login: String,
-    #[serde(rename = "type")] kind: String,
+    #[serde(rename = "type")]
+    kind: String,
 }

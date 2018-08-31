@@ -38,7 +38,8 @@ impl GitLab {
     fn get_organisation_repos(&self) -> Result<Vec<Repo>, Error> {
         debug!("Fetching organisation repos");
 
-        let current_user = self.client
+        let current_user = self
+            .client
             .current_user()
             .sync()
             .context("Unable to get the name of the current user")?
@@ -83,13 +84,15 @@ impl Provider for GitLab {
         let mut repos = Vec::new();
 
         if self.cfg.owned {
-            let owned = self.get_owned().context("Unable to get owned repos")?;
+            let owned =
+                self.get_owned().context("Unable to get owned repos")?;
             repos.extend(owned);
         }
 
         if self.cfg.organisations {
-            let org_repos = self.get_organisation_repos()
-                .context("Unable to get repos owned by organisations you are a part of")?;
+            let org_repos = self.get_organisation_repos().context(
+                "Unable to get repos owned by organisations you are a part of",
+            )?;
             repos.extend(org_repos);
         }
 

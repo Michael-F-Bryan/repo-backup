@@ -1,6 +1,6 @@
+use failure::{Error, ResultExt};
 use std::io::Write;
 use std::path::Path;
-use failure::{Error, ResultExt};
 
 use config::Config;
 use github::GitHub;
@@ -119,7 +119,12 @@ impl UpdateFailure {
         )?;
 
         for &(ref repo, ref err) in &self.errors {
-            writeln!(writer, "Error: {} failed with {}", repo.full_name(), err)?;
+            writeln!(
+                writer,
+                "Error: {} failed with {}",
+                repo.full_name(),
+                err
+            )?;
             for cause in err.causes().skip(1) {
                 writeln!(writer, "\tCaused By: {}", cause)?;
             }

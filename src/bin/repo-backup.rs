@@ -9,15 +9,15 @@ extern crate structopt;
 #[macro_use]
 extern crate structopt_derive;
 
-use std::io::{self, Write};
 use std::env;
+use std::io::{self, Write};
 
-use log::LevelFilter;
-use failure::{Error, ResultExt};
-use env_logger::Builder;
-use structopt::StructOpt;
-use repo_backup::{Config, Driver, UpdateFailure};
 use chrono::Local;
+use env_logger::Builder;
+use failure::{Error, ResultExt};
+use log::LevelFilter;
+use repo_backup::{Config, Driver, UpdateFailure};
+use structopt::StructOpt;
 
 fn main() {
     let args = Args::from_args();
@@ -34,7 +34,7 @@ fn main() {
         } else {
             eprintln!("Error: {}", e);
 
-            for cause in e.causes().skip(1) {
+            for cause in e.iter_chain().skip(1) {
                 eprintln!("\tCaused By: {}", cause);
             }
 
@@ -68,21 +68,31 @@ fn run(args: &Args) -> Result<(), Error> {
 
 #[derive(Debug, Clone, PartialEq, StructOpt)]
 struct Args {
-    #[structopt(short = "c", long = "config", default_value = "~/.repo-backup.toml",
-                help = "The configuration file to use.")]
+    #[structopt(
+        short = "c",
+        long = "config",
+        default_value = "~/.repo-backup.toml",
+        help = "The configuration file to use."
+    )]
     config_file: String,
-    #[structopt(short = "v", long = "verbose",
-                help = "Verbose output (repeat for more verbosity)")]
+    #[structopt(
+        short = "v",
+        long = "verbose",
+        help = "Verbose output (repeat for more verbosity)",
+        parse(from_occurrences)
+    )]
     verbosity: u64,
-    #[structopt(long = "example-config",
-                help = "Generate an example config and immediately exit.")]
+    #[structopt(
+        long = "example-config",
+        help = "Generate an example config and immediately exit."
+    )]
     example_config: bool,
 }
 
 impl Args {
     pub fn config(&self) -> Result<Config, Error> {
-        let config_file =
-            shellexpand::full(&self.config_file).context("Unable to expand wildcards")?;
+        let config_file = shellexpand::full(&self.config_file)
+            .context("Unable to expand wildcards")?;
 
         Config::from_file(&*config_file)
             .context("Couldn't load the config")
@@ -108,8 +118,8 @@ fn initialize_logging(args: &Args) -> Result<(), Error> {
         builder.parse(&filter);
     }
 
-    builder.format(
-        |out, record| match (record.line(), cfg!(debug_assertions)) {
+    builder.format(|out, record| {
+        match (record.line(), cfg!(debug_assertions)) {
             (Some(line), true) => writeln!(
                 out,
                 "{} [{:5}] ({}#{}): {}",
@@ -126,8 +136,8 @@ fn initialize_logging(args: &Args) -> Result<(), Error> {
                 record.level(),
                 record.args()
             ),
-        },
-    );
+        }
+    });
 
     builder.try_init()?;
 

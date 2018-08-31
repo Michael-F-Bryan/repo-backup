@@ -1,12 +1,14 @@
-use std::marker::PhantomData;
-use std::vec::IntoIter;
-use serde::Deserialize;
-use serde_json::{self, Value};
+use failure::{Error, ResultExt};
+use reqwest::header::{
+    qitem, Accept, Authorization, ContentType, Link, LinkValue, RelationType,
+    UserAgent,
+};
 use reqwest::Client;
 use reqwest::StatusCode;
-use reqwest::header::{qitem, Accept, Authorization, ContentType, Link, LinkValue, RelationType,
-                      UserAgent};
-use failure::{Error, ResultExt};
+use serde::Deserialize;
+use serde_json::{self, Value};
+use std::marker::PhantomData;
+use std::vec::IntoIter;
 
 /// A convenient command runner.
 ///
@@ -118,7 +120,8 @@ where
         debug!("Sending request to {:?}", endpoint);
 
         let mime_type = "application/vnd.github.v3+json".parse()?;
-        let request = self.client
+        let request = self
+            .client
             .get(endpoint)
             .header(ContentType::json())
             .header(UserAgent::new(String::from("repo-backup")))
@@ -129,14 +132,16 @@ where
 
         if log_enabled!(::log::Level::Trace) {
             let redacted_header =
-                format!("Request Headers {:#?}", request.headers()).replace(&self.token, "...");
+                format!("Request Headers {:#?}", request.headers())
+                    .replace(&self.token, "...");
 
             for line in redacted_header.lines() {
                 trace!("{}", line);
             }
         }
 
-        let mut response = self.client
+        let mut response = self
+            .client
             .execute(request)
             .context("Unable to send request")?;
 
@@ -156,7 +161,8 @@ where
             // }
         }
 
-        let got = serde_json::from_value(raw).context("Unable to deserialize response")?;
+        let got = serde_json::from_value(raw)
+            .context("Unable to deserialize response")?;
 
         if let Some(link) = headers.get::<Link>() {
             self.next_endpoint = next_link(link).map(|s| s.to_string());
