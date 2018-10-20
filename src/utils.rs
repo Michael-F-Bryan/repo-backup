@@ -1,8 +1,6 @@
 use failure::{Error, ResultExt};
-use reqwest::header::{
-    qitem, Accept, Authorization, ContentType, Link, LinkValue, RelationType,
-    UserAgent,
-};
+use hyperx::header::{Link, LinkValue, RelationType};
+use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, LINK, USER_AGENT};
 use reqwest::Client;
 use reqwest::StatusCode;
 use serde::Deserialize;
@@ -119,14 +117,13 @@ where
     fn send_request(&mut self, endpoint: &str) -> Result<Vec<I>, Error> {
         debug!("Sending request to {:?}", endpoint);
 
-        let mime_type = "application/vnd.github.v3+json".parse()?;
         let request = self
             .client
             .get(endpoint)
-            .header(ContentType::json())
-            .header(UserAgent::new(String::from("repo-backup")))
-            .header(Accept(vec![qitem(mime_type)]))
-            .header(Authorization(format!("token {}", self.token)))
+            .header(CONTENT_TYPE, "application/json")
+            .header(USER_AGENT, "repo-backup")
+            .header(ACCEPT, "application/vnd.github.v3+json")
+            .header(AUTHORIZATION, format!("token {}", self.token))
             .build()
             .context("Generated invalid request. This is a bug.")?;
 
@@ -164,8 +161,12 @@ where
         let got = serde_json::from_value(raw)
             .context("Unable to deserialize response")?;
 
-        if let Some(link) = headers.get::<Link>() {
-            self.next_endpoint = next_link(link).map(|s| s.to_string());
+        if let Some(link) = headers
+            .get(LINK)
+            .and_then(|l| l.to_str().ok())
+            .and_then(|l| l.parse().ok())
+        {
+            self.next_endpoint = next_link(&link).map(|s| s.to_string());
         }
 
         if !status.is_success() {
@@ -183,13 +184,6 @@ where
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Fail)]
-#[fail(display = "Request failed with {}", status)]
-pub struct FailedRequest {
-    status: StatusCode,
-    url: String,
-}
-
 impl<I> Iterator for Paginated<I>
 where
     for<'de> I: Deserialize<'de>,
@@ -202,7 +196,6 @@ where
         }
 
         if let Some(next_endpoint) = self.next_endpoint.take() {
-            // send request
             match self.send_request(&next_endpoint) {
                 Ok(values) => {
                     self.items = values.into_iter();
@@ -230,6 +223,13 @@ fn is_next(link_value: &LinkValue) -> bool {
         .rel()
         .map(|relations| relations.iter().any(|rel| *rel == RelationType::Next))
         .unwrap_or(false)
+}
+
+#[derive(Debug, Clone, PartialEq, Fail)]
+#[fail(display = "Request failed with {}", status)]
+pub struct FailedRequest {
+    status: StatusCode,
+    url: String,
 }
 
 #[cfg(test)]

@@ -126,6 +126,7 @@
 )]
 
 extern crate failure;
+extern crate hyperx;
 #[macro_use]
 extern crate failure_derive;
 extern crate gitlab;
