@@ -1,6 +1,6 @@
 use actix::{
-    Actor, Addr, Arbiter, AsyncContext, Context, Handler, Recipient,
-    SyncArbiter, System,
+    Actor, Arbiter, AsyncContext, Context, Handler, Recipient, SyncArbiter,
+    System,
 };
 use crate::git::{DownloadRepo, GitClone};
 use crate::providers::Provider;
@@ -15,6 +15,7 @@ pub struct Driver {
     logger: Logger,
     providers: Vec<Box<Provider>>,
     gits: Recipient<DownloadRepo>,
+    error_count: usize,
 }
 
 impl Driver {
@@ -39,20 +40,26 @@ impl Driver {
             logger,
             providers: Vec::new(),
             gits,
+            error_count: 0,
         }
     }
 
-    pub fn register<P: Provider + 'static>(&mut self, provider: P) {
+    pub fn register<P: Provider + 'static>(
+        &mut self,
+        provider: P,
+    ) -> &mut Self {
         self.providers.push(Box::new(provider));
+        self
     }
 
-    pub fn do_register<F, P>(&mut self, constructor: F)
+    pub fn do_register<F, P>(&mut self, constructor: F) -> &mut Self
     where
         F: FnOnce(&Config, &Logger) -> P,
         P: Provider + 'static,
     {
         let provider = constructor(&self.config, &self.logger);
         self.register(provider);
+        self
     }
 }
 
@@ -97,7 +104,7 @@ struct Stop;
 impl Handler<Stop> for Driver {
     type Result = ();
 
-    fn handle(&mut self, _msg: Stop, ctx: &mut Self::Context) {
+    fn handle(&mut self, _msg: Stop, _ctx: &mut Self::Context) {
         info!(self.logger, "Stopping...");
         System::current().stop();
     }
@@ -110,16 +117,110 @@ impl Handler<Done> for Driver {
     type Result = ();
 
     fn handle(&mut self, msg: Done, _ctx: &mut Self::Context) {
-        unimplemented!();
+        if let Err(e) = msg.0 {
+            warn!(self.logger, "Error backing up a repository";
+                "error" => e.to_string());
+
+            self.error_count += 1;
+            let threshold = self.config.general.error_threshold;
+
+            if threshold > 0 && self.error_count > threshold {
+                error!(self.logger, "Bailing due to too many errors";
+                    "error-count" => self.error_count);
+                System::current().stop();
+            }
+        }
     }
 }
 
-/// Convert a future which returns a result into a future which will error when
-/// the inner result errors.
-fn lift_err<T, E>(
-    fut: impl Future<Item = Result<T, impl Into<E>>, Error = impl Into<E>>,
-) -> impl Future<Item = T, Error = E> {
-    fut.map_err(Into::into)
-        .then(|item| item.map(|inner| inner.map_err(Into::into)))
-        .flatten()
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::General;
+    use crate::git::GitRepo;
+    use slog::Discard;
+    use std::path::PathBuf;
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Default, Debug, Clone)]
+    struct Mock {
+        repos: Arc<Mutex<Vec<DownloadRepo>>>,
+    }
+
+    impl Actor for Mock {
+        type Context = Context<Mock>;
+    }
+
+    impl Handler<DownloadRepo> for Mock {
+        type Result = Result<(), Error>;
+
+        fn handle(
+            &mut self,
+            msg: DownloadRepo,
+            _ctx: &mut Self::Context,
+        ) -> Self::Result {
+            self.repos.lock().unwrap().push(msg);
+            Ok(())
+        }
+    }
+
+    struct MockProvider {
+        repos: Vec<GitRepo>,
+    }
+
+    impl Provider for MockProvider {
+        fn repositories(&self) -> Box<Stream<Item = GitRepo, Error = Error>> {
+            Box::new(stream::iter_ok(self.repos.clone()))
+        }
+    }
+
+    fn dummy_config() -> Config {
+        Config {
+            general: General {
+                root: PathBuf::new(),
+                threads: 5,
+                error_threshold: 0,
+            },
+        }
+    }
+
+    #[test]
+    fn run_driver_to_completion() {
+        let should_be = vec![
+            GitRepo {
+                dest_dir: PathBuf::from("/1"),
+                ssh_url: String::from("1"),
+            },
+            GitRepo {
+                dest_dir: PathBuf::from("/2"),
+                ssh_url: String::from("2"),
+            },
+        ];
+
+        let repos: Arc<Mutex<Vec<DownloadRepo>>> = Default::default();
+        let cfg = dummy_config();
+        let logger = Logger::root(Discard, o!());
+
+        let sys = System::new("test");
+        let mock = Mock {
+            repos: Arc::clone(&repos),
+        }
+        .start();
+        let mut driver =
+            Driver::new_with_recipient(cfg, logger, mock.recipient());
+        driver.register(MockProvider {
+            repos: should_be.clone(),
+        });
+        driver.start();
+
+        assert_eq!(sys.run(), 0);
+
+        let got = repos
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|repo| repo.0.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(got, should_be);
+    }
 }

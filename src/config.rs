@@ -11,4 +11,10 @@ pub struct General {
     pub root: PathBuf,
     #[serde(default = "num_cpus::get")]
     pub threads: usize,
+    /// The maximum number of errors allowed before declaring the entire backup
+    /// as failed.
+    ///
+    /// A threshold of `0` means there's no limit.
+    #[serde(default = "Default::default")]
+    pub error_threshold: usize,
 }

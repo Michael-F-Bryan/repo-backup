@@ -1,5 +1,4 @@
-use actix::{Actor, Addr, Handler, Message, SyncContext};
-use crate::driver::Driver;
+use actix::{Actor, Handler, Message, SyncContext};
 use failure::Error;
 use slog::Logger;
 use std::path::PathBuf;
@@ -38,7 +37,7 @@ impl Handler<DownloadRepo> for GitClone {
 }
 
 /// Request that a repository is downloaded.
-#[derive(Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DownloadRepo(pub GitRepo);
 
 impl Message for DownloadRepo {
