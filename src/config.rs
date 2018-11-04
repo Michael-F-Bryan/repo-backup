@@ -1,6 +1,7 @@
 //! Configuration for `repo-backup`.
 
 use sec::Secret;
+use serde::de::{Deserialize, Deserializer};
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -25,6 +26,20 @@ pub struct Config {
 pub struct General {
     /// The root directory to place all downloaded repositories.
     pub dest_dir: PathBuf,
+    /// The maximum number of errors that can be encountered before bailing.
+    #[serde(default, deserialize_with = "deserialize_error_threshold")]
+    pub max_error_threshold: Option<usize>,
+}
+
+fn deserialize_error_threshold<'de, D: Deserializer<'de>>(
+    de: D,
+) -> Result<Option<usize>, D::Error> {
+    let raw: Option<usize> = Deserialize::deserialize(de)?;
+    if raw == Some(0) {
+        Ok(None)
+    } else {
+        Ok(raw)
+    }
 }
 
 /// Github-specific settings.
@@ -106,6 +121,7 @@ impl Config {
         Config {
             general: General {
                 dest_dir: PathBuf::from("/srv"),
+                max_error_threshold: None,
             },
             github: Some(GithubConfig {
                 api_key: String::from("your API key").into(),

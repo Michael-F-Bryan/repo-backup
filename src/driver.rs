@@ -45,9 +45,11 @@ impl Driver {
                 errors.push((repo.clone(), e));
             }
 
-            if errors.len() >= 10 {
-                error!("Too many errors, bailing...");
-                break;
+            if let Some(max_errors) = self.config.general.max_error_threshold {
+                if errors.len() >= max_errors {
+                    error!("Too many errors, bailing...");
+                    break;
+                }
             }
         }
 
