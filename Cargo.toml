@@ -8,11 +8,6 @@ repository = "https://github.com/Michael-F-Bryan/repo-backup"
 version = "0.2.3-alpha.0"
 readme = "README.md"
 
-[[bin]]
-doc = false
-name = "repo-backup"
-path = "src/bin/repo-backup.rs"
-
 [badges.appveyor]
 repository = "Michael-F-Bryan/repo-backup"
 
@@ -20,19 +15,5 @@ repository = "Michael-F-Bryan/repo-backup"
 repository = "Michael-F-Bryan/repo-backup"
 
 [dependencies]
-chrono = "0.4"
-env_logger = "0.5"
-failure = "0.1"
-failure_derive = "0.1"
-gitlab = "0.1103"
-log = "0.4"
-reqwest = "0.9"
-serde = "1.0"
-serde_derive = "1.0"
-serde_json = "1.0"
-shellexpand = "1.0"
-structopt = "0.2"
-structopt-derive = "0.2"
-toml = "0.4"
-sec = { version = "0.99.0", features = ["deserialize", "serialize"] }
-hyperx = "0.13.1"
+actix = "0.7.5"
+slog = "2.4.1"
