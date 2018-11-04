@@ -138,7 +138,6 @@ impl Handler<Done> for Driver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::General;
     use crate::git::GitRepo;
     use slog::Discard;
     use std::path::PathBuf;
@@ -194,16 +193,6 @@ mod tests {
         }
     }
 
-    fn dummy_config() -> Config {
-        Config {
-            general: General {
-                root: PathBuf::new(),
-                threads: 5,
-                error_threshold: 0,
-            },
-        }
-    }
-
     #[test]
     fn run_driver_to_completion() {
         let should_be = vec![
@@ -218,7 +207,7 @@ mod tests {
         ];
 
         let repos: Arc<Mutex<Vec<DownloadRepo>>> = Default::default();
-        let cfg = dummy_config();
+        let cfg = Config::default();
         let logger = Logger::root(Discard, o!());
 
         let sys = System::new("test");
@@ -246,7 +235,7 @@ mod tests {
 
     #[test]
     fn stop_after_encountering_the_error_threshold() {
-        let mut cfg = dummy_config();
+        let mut cfg = Config::default();
         cfg.general.error_threshold = 1;
 
         let sys = System::new("test");
