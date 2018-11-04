@@ -1,3 +1,4 @@
+use actix::msgs::StopArbiter;
 use actix::{
     Actor, Arbiter, AsyncContext, Context, Handler, Recipient, SyncArbiter,
     System,
@@ -124,10 +125,11 @@ impl Handler<Done> for Driver {
             self.error_count += 1;
             let threshold = self.config.general.error_threshold;
 
-            if threshold > 0 && self.error_count > threshold {
-                error!(self.logger, "Bailing due to too many errors";
+            if threshold > 0 && self.error_count >= threshold {
+                error!(self.logger, "Too many errors were encountered. Bailing";
                     "error-count" => self.error_count);
-                System::current().stop();
+
+                System::current().arbiter().do_send(StopArbiter(1));
             }
         }
     }
@@ -161,6 +163,24 @@ mod tests {
         ) -> Self::Result {
             self.repos.lock().unwrap().push(msg);
             Ok(())
+        }
+    }
+
+    struct DodgyActor;
+
+    impl Actor for DodgyActor {
+        type Context = Context<DodgyActor>;
+    }
+
+    impl Handler<DownloadRepo> for DodgyActor {
+        type Result = Result<(), Error>;
+
+        fn handle(
+            &mut self,
+            _msg: DownloadRepo,
+            _ctx: &mut Self::Context,
+        ) -> Self::Result {
+            Err(failure::err_msg("Oops.."))
         }
     }
 
@@ -222,5 +242,36 @@ mod tests {
             .map(|repo| repo.0.clone())
             .collect::<Vec<_>>();
         assert_eq!(got, should_be);
+    }
+
+    #[test]
+    fn stop_after_encountering_the_error_threshold() {
+        let mut cfg = dummy_config();
+        cfg.general.error_threshold = 1;
+
+        let sys = System::new("test");
+        let mut driver = Driver::new_with_recipient(
+            cfg,
+            Logger::root(Discard, o!()),
+            DodgyActor.start().recipient(),
+        );
+        driver.register(MockProvider {
+            repos: vec![
+                GitRepo {
+                    dest_dir: PathBuf::from("/1"),
+                    ssh_url: String::from("1"),
+                },
+                GitRepo {
+                    dest_dir: PathBuf::from("/1"),
+                    ssh_url: String::from("1"),
+                },
+            ],
+        });
+        driver.start();
+
+        let _code = sys.run();
+
+        // FIXME: Figure out how to stop the system with an error code
+        // assert_eq!(code, 1);
     }
 }
