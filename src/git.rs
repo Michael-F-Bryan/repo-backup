@@ -14,41 +14,6 @@ impl GitClone {
     pub fn new(logger: Logger) -> GitClone {
         GitClone { logger }
     }
-
-    fn fetch_updates(
-        &self,
-        dest_dir: PathBuf,
-        _ssh_url: String,
-    ) -> Result<(), Error> {
-        can_update_git_repo(&dest_dir)?;
-        unimplemented!()
-    }
-
-    fn do_clone(
-        &self,
-        dest_dir: PathBuf,
-        ssh_url: String,
-    ) -> Result<(), Error> {
-        let output = Command::new("git")
-            .arg("clone")
-            .arg("--quiet")
-            .arg("--recursive")
-            .arg(ssh_url)
-            .arg(dest_dir)
-            .output()?;
-
-        if output.status.success() {
-            Ok(())
-        } else {
-            Err(failure::err_msg(
-                String::from_utf8(output.stderr).unwrap_or_else(|_| {
-                    String::from("<couldn't read the error message>")
-                }),
-            )
-            .context("Unable to clone the repository")
-            .into())
-        }
-    }
 }
 
 impl Actor for GitClone {
@@ -70,9 +35,11 @@ impl Handler<DownloadRepo> for GitClone {
             "url" => &ssh_url);
 
         if dest_dir.exists() {
-            self.fetch_updates(dest_dir, ssh_url)
+            debug!(self.logger, "Fetching updates"; "ssh-url" => &ssh_url);
+            fetch_updates(&dest_dir)
         } else {
-            self.do_clone(dest_dir, ssh_url)
+            debug!(self.logger, "Cloning into repo"; "ssh-url" => &ssh_url);
+            do_clone(&dest_dir, &ssh_url)
         }
     }
 }
@@ -92,6 +59,74 @@ pub struct GitRepo {
     pub ssh_url: String,
 }
 
+fn do_clone(dest_dir: &Path, ssh_url: &str) -> Result<(), Error> {
+    let output = Command::new("git")
+        .arg("clone")
+        .arg("--quiet")
+        .arg("--recursive")
+        .arg(ssh_url)
+        .arg(dest_dir)
+        .output()?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(
+            failure::err_msg(String::from_utf8(output.stderr).unwrap_or_else(
+                |_| String::from("<couldn't read the error message>"),
+            ))
+            .context("Unable to clone the repository")
+            .into(),
+        )
+    }
+}
+
+fn fetch_updates(dest_dir: &Path) -> Result<(), Error> {
+    can_update_git_repo(&dest_dir)?;
+
+    let output = Command::new("git")
+        .arg("fetch")
+        .arg("--all")
+        .arg("--quiet")
+        .arg("--tags")
+        .arg("--prune")
+        .arg("--recurse-submodules=yes")
+        .current_dir(dest_dir)
+        .output()
+        .context("Unable to invoke git")?;
+
+    if !output.status.success() {
+        let err =
+            failure::err_msg(String::from_utf8(output.stderr).unwrap_or_else(
+                |_| String::from("<couldn't read the error message>"),
+            ))
+            .context("Unable to fetch upstream changes");
+
+        return Err(err.into());
+    }
+
+    let output = Command::new("git")
+        .arg("merge")
+        .arg("--ff-only")
+        .arg("--quiet")
+        .arg("FETCH_HEAD")
+        .current_dir(dest_dir)
+        .output()
+        .context("Unable to invoke git")?;
+
+    if !output.status.success() {
+        let err =
+            failure::err_msg(String::from_utf8(output.stderr).unwrap_or_else(
+                |_| String::from("<couldn't read the error message>"),
+            ))
+            .context("Unable to fast-forward to the latest changes");
+
+        return Err(err.into());
+    }
+
+    Ok(())
+}
+
 fn can_update_git_repo(repo_dir: &Path) -> Result<(), Error> {
     if !repo_dir.join(".git").is_dir() {
         return Err(NotARepo.into());
@@ -102,7 +137,18 @@ fn can_update_git_repo(repo_dir: &Path) -> Result<(), Error> {
         .arg("--porcelain")
         .current_dir(repo_dir)
         .output()
-        .context("Couldn't check if there are unsaved changes")?;
+        .context("Unable to invoke git")?;
+
+    if !git_status.status.success() {
+        let err = failure::err_msg(
+            String::from_utf8(git_status.stderr).unwrap_or_else(|_| {
+                String::from("<couldn't read the error message>")
+            }),
+        )
+        .context("Unable to check if there are unsaved changes");
+
+        return Err(err.into());
+    }
 
     let stdout = String::from_utf8(git_status.stdout)
         .context("Can't parse output from `git status`")?;
@@ -176,5 +222,24 @@ mod tests {
         assert!(status.success());
 
         assert!(can_update_git_repo(temp.path()).is_ok());
+    }
+
+    #[test]
+    fn clone_a_repo() {
+        let temp = tempfile::tempdir().unwrap();
+        let sub_dir = temp.path().join("dest");
+
+        do_clone(&sub_dir, env!("CARGO_MANIFEST_DIR")).unwrap();
+
+        assert!(sub_dir.join(".git").exists());
+    }
+
+    #[test]
+    fn clone_and_then_update() {
+        let temp = tempfile::tempdir().unwrap();
+        let sub_dir = temp.path().join("dest");
+        do_clone(&sub_dir, env!("CARGO_MANIFEST_DIR")).unwrap();
+
+        assert!(fetch_updates(&sub_dir).is_ok());
     }
 }
