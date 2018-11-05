@@ -3,7 +3,7 @@ use actix::{
     Actor, Arbiter, AsyncContext, Context, Handler, Recipient, SyncArbiter,
     System,
 };
-use crate::git::{DownloadRepo, GitClone};
+use crate::git::{DownloadRepo, GitClone, GitRepo};
 use crate::providers::Provider;
 use crate::Config;
 use failure::Error;
@@ -78,12 +78,18 @@ impl Actor for Driver {
 
         let gits = self.gits.clone();
 
-        let started_downloading = repos
-            .and_then(move |repo| gits.send(DownloadRepo(repo)).from_err());
+        let started_downloading = repos.and_then(move |repo| {
+            (
+                future::ok(repo.clone()),
+                gits.send(DownloadRepo(repo)).from_err(),
+            )
+        });
 
         let this = ctx.address();
-        let finished_downloading = started_downloading
-            .and_then(move |result| this.send(Done(result)).from_err());
+        let finished_downloading =
+            started_downloading.and_then(move |(repo, outcome)| {
+                this.send(Done { repo, outcome }).from_err()
+            });
 
         let logger = self.logger.clone();
         let this = ctx.address();
@@ -112,15 +118,19 @@ impl Handler<Stop> for Driver {
 }
 
 #[derive(Debug, Message)]
-struct Done(Result<(), Error>);
+struct Done {
+    pub repo: GitRepo,
+    pub outcome: Result<(), Error>,
+}
 
 impl Handler<Done> for Driver {
     type Result = ();
 
     fn handle(&mut self, msg: Done, _ctx: &mut Self::Context) {
-        if let Err(e) = msg.0 {
+        if let Err(e) = msg.outcome {
             warn!(self.logger, "Error backing up a repository";
-                "error" => e.to_string());
+                "error" => e.to_string(),
+                "url" => &msg.repo.ssh_url);
 
             self.error_count += 1;
             let threshold = self.config.general.error_threshold;

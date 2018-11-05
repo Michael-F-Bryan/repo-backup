@@ -1,7 +1,9 @@
 use actix::{Actor, Handler, Message, SyncContext};
-use failure::Error;
+use failure::{Error, ResultExt};
 use slog::Logger;
-use std::path::PathBuf;
+use std::fmt::{self, Display, Formatter};
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 #[derive(Debug, Clone, Message)]
 pub(crate) struct GitClone {
@@ -11,6 +13,41 @@ pub(crate) struct GitClone {
 impl GitClone {
     pub fn new(logger: Logger) -> GitClone {
         GitClone { logger }
+    }
+
+    fn fetch_updates(
+        &self,
+        dest_dir: PathBuf,
+        _ssh_url: String,
+    ) -> Result<(), Error> {
+        can_update_git_repo(&dest_dir)?;
+        unimplemented!()
+    }
+
+    fn do_clone(
+        &self,
+        dest_dir: PathBuf,
+        ssh_url: String,
+    ) -> Result<(), Error> {
+        let output = Command::new("git")
+            .arg("clone")
+            .arg("--quiet")
+            .arg("--recursive")
+            .arg(ssh_url)
+            .arg(dest_dir)
+            .output()?;
+
+        if output.status.success() {
+            Ok(())
+        } else {
+            Err(failure::err_msg(
+                String::from_utf8(output.stderr).unwrap_or_else(|_| {
+                    String::from("<couldn't read the error message>")
+                }),
+            )
+            .context("Unable to clone the repository")
+            .into())
+        }
     }
 }
 
@@ -26,13 +63,17 @@ impl Handler<DownloadRepo> for GitClone {
         msg: DownloadRepo,
         _ctx: &mut Self::Context,
     ) -> Self::Result {
-        let DownloadRepo(repo) = msg;
+        let DownloadRepo(GitRepo { ssh_url, dest_dir }) = msg;
 
         debug!(self.logger, "Started downloading a repository";
-            "dest-dir" => repo.dest_dir.display(),
-            "url" => &repo.ssh_url);
+            "dest-dir" => dest_dir.display(),
+            "url" => &ssh_url);
 
-        Ok(())
+        if dest_dir.exists() {
+            self.fetch_updates(dest_dir, ssh_url)
+        } else {
+            self.do_clone(dest_dir, ssh_url)
+        }
     }
 }
 
@@ -49,4 +90,91 @@ impl Message for DownloadRepo {
 pub struct GitRepo {
     pub dest_dir: PathBuf,
     pub ssh_url: String,
+}
+
+fn can_update_git_repo(repo_dir: &Path) -> Result<(), Error> {
+    if !repo_dir.join(".git").is_dir() {
+        return Err(NotARepo.into());
+    }
+
+    let git_status = Command::new("git")
+        .arg("status")
+        .arg("--porcelain")
+        .current_dir(repo_dir)
+        .output()
+        .context("Couldn't check if there are unsaved changes")?;
+
+    let stdout = String::from_utf8(git_status.stdout)
+        .context("Can't parse output from `git status`")?;
+    let lines = stdout.lines().count();
+
+    if lines > 0 {
+        return Err(UnsavedChanges { count: lines }.into());
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Fail)]
+#[fail(display = "Not a git repository")]
+struct NotARepo;
+
+#[derive(Debug, Clone, PartialEq, Fail)]
+struct UnsavedChanges {
+    count: usize,
+}
+
+impl Display for UnsavedChanges {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "There are {} unsaved changes", self.count)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::File;
+    use std::process::Stdio;
+
+    #[test]
+    fn directory_isnt_a_git_repo() {
+        let temp = tempfile::tempdir().unwrap();
+
+        let err = can_update_git_repo(temp.path()).unwrap_err();
+
+        assert!(err.downcast_ref::<NotARepo>().is_some());
+    }
+
+    #[test]
+    fn git_directory_with_unsaved_changes() {
+        let temp = tempfile::tempdir().unwrap();
+        let status = Command::new("git")
+            .arg("init")
+            .arg(temp.path())
+            .stdout(Stdio::null())
+            .status()
+            .unwrap();
+        assert!(status.success());
+        File::create(temp.path().join("blah.txt")).unwrap();
+        File::create(temp.path().join("second.txt")).unwrap();
+
+        let err = can_update_git_repo(temp.path()).unwrap_err();
+
+        let unsaved = err.downcast_ref::<UnsavedChanges>().unwrap();
+        assert_eq!(unsaved.count, 2);
+    }
+
+    #[test]
+    fn happy_git_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let status = Command::new("git")
+            .arg("init")
+            .arg(temp.path())
+            .stdout(Stdio::null())
+            .status()
+            .unwrap();
+        assert!(status.success());
+
+        assert!(can_update_git_repo(temp.path()).is_ok());
+    }
 }
