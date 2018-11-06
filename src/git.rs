@@ -182,6 +182,21 @@ mod tests {
     use std::fs::File;
     use std::process::Stdio;
 
+    macro_rules! require_program {
+        ($name:expr) => {{
+            let exists = ::std::process::Command::new($name)
+                .arg("--help")
+                .stdout(::std::process::Stdio::null())
+                .stderr(::std::process::Stdio::null())
+                .status()
+                .is_ok();
+            if !exists {
+                eprintln!("Couldn't find \"{}\"", $name);
+                return;
+            }
+        }};
+    }
+
     #[test]
     fn directory_isnt_a_git_repo() {
         let temp = tempfile::tempdir().unwrap();
@@ -193,6 +208,8 @@ mod tests {
 
     #[test]
     fn git_directory_with_unsaved_changes() {
+        require_program!("git");
+
         let temp = tempfile::tempdir().unwrap();
         let status = Command::new("git")
             .arg("init")
@@ -212,6 +229,8 @@ mod tests {
 
     #[test]
     fn happy_git_directory() {
+        require_program!("git");
+
         let temp = tempfile::tempdir().unwrap();
         let status = Command::new("git")
             .arg("init")
@@ -226,6 +245,8 @@ mod tests {
 
     #[test]
     fn clone_a_repo() {
+        require_program!("git");
+
         let temp = tempfile::tempdir().unwrap();
         let sub_dir = temp.path().join("dest");
 
@@ -236,6 +257,8 @@ mod tests {
 
     #[test]
     fn clone_and_then_update() {
+        require_program!("git");
+
         let temp = tempfile::tempdir().unwrap();
         let sub_dir = temp.path().join("dest");
         do_clone(&sub_dir, env!("CARGO_MANIFEST_DIR")).unwrap();
