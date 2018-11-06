@@ -59,70 +59,54 @@ pub struct GitRepo {
     pub ssh_url: String,
 }
 
-fn do_clone(dest_dir: &Path, ssh_url: &str) -> Result<(), Error> {
-    let output = Command::new("git")
-        .arg("clone")
-        .arg("--quiet")
-        .arg("--recursive")
-        .arg(ssh_url)
-        .arg(dest_dir)
-        .output()?;
+macro_rules! cmd {
+    ($name:expr $(, $arg:expr)*) => {{
+        let mut cmd = cmd!(@compose_cmd; $name $(, $arg)*);
+        cmd!(@execute; cmd)
+    }};
+    ($name:expr $(, $arg:expr)*; in $current_dir:expr) => {{
+        let mut cmd = cmd!(@compose_cmd; $name $(, $arg)*);
+        cmd.current_dir($current_dir);
+        cmd!(@execute; cmd)
+    }};
 
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(
-            failure::err_msg(String::from_utf8(output.stderr).unwrap_or_else(
-                |_| String::from("<couldn't read the error message>"),
-            ))
-            .context("Unable to clone the repository")
-            .into(),
-        )
-    }
+    (@compose_cmd; $name:expr $(, $arg:expr)*) => {{
+        let mut cmd = Command::new($name);
+        $(
+            cmd.arg($arg);
+        )*
+        cmd
+    }};
+    (@execute; $command:expr) => {{
+        $command.output()
+            .context("Unable to execute the command")
+            .map_err(Error::from)
+            .and_then(|output| if output.status.success() {
+                Ok(output)
+            } else {
+                let stderr = String::from_utf8(output.stderr)
+                    .unwrap_or_else(|_| String::from("<couldn't read the error message>"));
+                Err(failure::Error::from(failure::err_msg(stderr)))
+            })
+    }};
+}
+
+fn do_clone(dest_dir: &Path, ssh_url: &str) -> Result<(), Error> {
+    cmd!("git", "clone", "--quiet", "--recursive", ssh_url, dest_dir)
+        .context("Unable to clone the repository")?;
+
+    Ok(())
 }
 
 fn fetch_updates(dest_dir: &Path) -> Result<(), Error> {
     can_update_git_repo(&dest_dir)?;
 
-    let output = Command::new("git")
-        .arg("fetch")
-        .arg("--all")
-        .arg("--quiet")
-        .arg("--tags")
-        .arg("--prune")
-        .arg("--recurse-submodules=yes")
-        .current_dir(dest_dir)
-        .output()
-        .context("Unable to invoke git")?;
+    cmd!("git", "fetch", "--all", "--quiet", "--tags", "--prune", 
+        "--recurse-submodules=yes"; in dest_dir)
+        .context("Unable to fetch upstream changes")?;
 
-    if !output.status.success() {
-        let err =
-            failure::err_msg(String::from_utf8(output.stderr).unwrap_or_else(
-                |_| String::from("<couldn't read the error message>"),
-            ))
-            .context("Unable to fetch upstream changes");
-
-        return Err(err.into());
-    }
-
-    let output = Command::new("git")
-        .arg("merge")
-        .arg("--ff-only")
-        .arg("--quiet")
-        .arg("FETCH_HEAD")
-        .current_dir(dest_dir)
-        .output()
-        .context("Unable to invoke git")?;
-
-    if !output.status.success() {
-        let err =
-            failure::err_msg(String::from_utf8(output.stderr).unwrap_or_else(
-                |_| String::from("<couldn't read the error message>"),
-            ))
-            .context("Unable to fast-forward to the latest changes");
-
-        return Err(err.into());
-    }
+    cmd!("git", "merge", "--ff-only", "--quiet", "FETCH_HEAD"; in dest_dir)
+        .context("Unable to fast-forward to the latest changes")?;
 
     Ok(())
 }
@@ -132,25 +116,10 @@ fn can_update_git_repo(repo_dir: &Path) -> Result<(), Error> {
         return Err(NotARepo.into());
     }
 
-    let git_status = Command::new("git")
-        .arg("status")
-        .arg("--porcelain")
-        .current_dir(repo_dir)
-        .output()
-        .context("Unable to invoke git")?;
+    let output = cmd!("git", "status", "--porcelain"; in repo_dir)
+        .context("Unable to check for unsaved changes")?;
 
-    if !git_status.status.success() {
-        let err = failure::err_msg(
-            String::from_utf8(git_status.stderr).unwrap_or_else(|_| {
-                String::from("<couldn't read the error message>")
-            }),
-        )
-        .context("Unable to check if there are unsaved changes");
-
-        return Err(err.into());
-    }
-
-    let stdout = String::from_utf8(git_status.stdout)
+    let stdout = String::from_utf8(output.stdout)
         .context("Can't parse output from `git status`")?;
     let lines = stdout.lines().count();
 
