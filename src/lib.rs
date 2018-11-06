@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate actix;
 extern crate failure;
+extern crate hubcaps;
 #[macro_use]
 extern crate failure_derive;
 extern crate futures;

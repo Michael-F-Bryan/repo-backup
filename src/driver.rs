@@ -24,8 +24,9 @@ impl Driver {
     /// thread pool.
     pub fn new(config: Config, logger: Logger) -> Driver {
         let l2 = logger.clone();
+        let root = config.general.root.clone();
         let gits = SyncArbiter::start(config.general.threads, move || {
-            GitClone::new(l2.clone())
+            GitClone::new(root.clone(), l2.clone())
         });
 
         Driver::new_with_recipient(config, logger, gits.recipient())
@@ -73,8 +74,7 @@ impl Actor for Driver {
                 .iter()
                 .map(|p| p.repositories())
                 .collect::<Vec<_>>(),
-        )
-        .flatten();
+        ).flatten();
 
         let gits = self.gits.clone();
 
@@ -99,8 +99,7 @@ impl Actor for Driver {
                 .map_err(move |e| {
                     error!(logger, "Error!";
                 "error" => e.to_string())
-                })
-                .then(move |_| this.send(Stop).map_err(|_| ())),
+                }).then(move |_| this.send(Stop).map_err(|_| ())),
         );
     }
 }
@@ -223,8 +222,7 @@ mod tests {
         let sys = System::new("test");
         let mock = Mock {
             repos: Arc::clone(&repos),
-        }
-        .start();
+        }.start();
         let mut driver =
             Driver::new_with_recipient(cfg, logger, mock.recipient());
         driver.register(MockProvider {

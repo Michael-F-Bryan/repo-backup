@@ -1,6 +1,9 @@
-use serde::de::{Deserialize, Deserializer, Error as DeError};
+use serde::de::{
+    Deserialize, DeserializeOwned, Deserializer, Error as DeError,
+};
 use serde::ser::{Error as SerError, Serialize, Serializer};
 use std::collections::BTreeMap;
+use std::fmt::{self, Display, Formatter};
 use std::path::PathBuf;
 use toml::Value;
 
@@ -8,6 +11,33 @@ use toml::Value;
 pub struct Config {
     pub general: General,
     pub rest: BTreeMap<String, Value>,
+}
+
+impl Config {
+    pub fn get_deserialized<D: DeserializeOwned>(
+        &self,
+        key: &str,
+    ) -> Result<D, ConfigError> {
+        self.rest
+            .get(key)
+            .ok_or(ConfigError::MissingKey)
+            .and_then(|v| v.clone().try_into().map_err(ConfigError::Toml))
+    }
+}
+
+#[derive(Debug, Clone, Fail)]
+pub enum ConfigError {
+    MissingKey,
+    Toml(toml::de::Error),
+}
+
+impl Display for ConfigError {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            ConfigError::MissingKey => write!(f, "missing key"),
+            ConfigError::Toml(ref t) => t.fmt(f),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

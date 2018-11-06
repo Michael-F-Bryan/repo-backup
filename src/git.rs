@@ -8,11 +8,12 @@ use std::process::Command;
 #[derive(Debug, Clone, Message)]
 pub(crate) struct GitClone {
     logger: Logger,
+    root: PathBuf,
 }
 
 impl GitClone {
-    pub fn new(logger: Logger) -> GitClone {
-        GitClone { logger }
+    pub fn new(root: PathBuf, logger: Logger) -> GitClone {
+        GitClone { root, logger }
     }
 }
 
@@ -33,6 +34,9 @@ impl Handler<DownloadRepo> for GitClone {
         debug!(self.logger, "Started downloading a repository";
             "dest-dir" => dest_dir.display(),
             "url" => &ssh_url);
+
+        // make sure the path is absolute
+        let dest_dir = self.root.join(dest_dir);
 
         if dest_dir.exists() {
             debug!(self.logger, "Fetching updates"; "ssh-url" => &ssh_url);
@@ -55,8 +59,18 @@ impl Message for DownloadRepo {
 /// A basic git repository.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GitRepo {
+    /// The destination directory, relative to the backup root.
     pub dest_dir: PathBuf,
     pub ssh_url: String,
+}
+
+impl From<hubcaps::repositories::Repo> for GitRepo {
+    fn from(other: hubcaps::repositories::Repo) -> GitRepo {
+        GitRepo {
+            dest_dir: PathBuf::from(other.full_name),
+            ssh_url: other.ssh_url,
+        }
+    }
 }
 
 macro_rules! cmd {
