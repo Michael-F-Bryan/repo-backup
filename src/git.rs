@@ -5,7 +5,7 @@ use std::fmt::{self, Display, Formatter};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-#[derive(Debug, Clone, Message)]
+#[derive(Debug, Clone)]
 pub(crate) struct GitClone {
     logger: Logger,
     root: PathBuf,
@@ -24,11 +24,7 @@ impl Actor for GitClone {
 impl Handler<DownloadRepo> for GitClone {
     type Result = Result<(), Error>;
 
-    fn handle(
-        &mut self,
-        msg: DownloadRepo,
-        _ctx: &mut Self::Context,
-    ) -> Self::Result {
+    fn handle(&mut self, msg: DownloadRepo, _ctx: &mut Self::Context) -> Self::Result {
         let DownloadRepo(GitRepo { ssh_url, dest_dir }) = msg;
 
         debug!(self.logger, "Started downloading a repository";
@@ -117,7 +113,7 @@ fn fetch_updates(dest_dir: &Path) -> Result<(), Error> {
 
     cmd!("git", "fetch", "--all", "--quiet", "--tags", "--prune", 
         "--recurse-submodules=yes"; in dest_dir)
-        .context("Unable to fetch upstream changes")?;
+    .context("Unable to fetch upstream changes")?;
 
     cmd!("git", "merge", "--ff-only", "--quiet", "FETCH_HEAD"; in dest_dir)
         .context("Unable to fast-forward to the latest changes")?;
@@ -133,8 +129,8 @@ fn can_update_git_repo(repo_dir: &Path) -> Result<(), Error> {
     let output = cmd!("git", "status", "--porcelain"; in repo_dir)
         .context("Unable to check for unsaved changes")?;
 
-    let stdout = String::from_utf8(output.stdout)
-        .context("Can't parse output from `git status`")?;
+    let stdout =
+        String::from_utf8(output.stdout).context("Can't parse output from `git status`")?;
     let lines = stdout.lines().count();
 
     if lines > 0 {
