@@ -2,7 +2,8 @@ use super::Provider;
 use crate::config::Config;
 use crate::GitRepo;
 use failure::{Error, SyncFailure};
-use futures::stream::Stream;
+use futures::stream::{self, Stream};
+use futures::Future;
 use hubcaps::Credentials;
 
 /// Retrieve GitHub repositories.
@@ -29,23 +30,55 @@ impl Provider for GitHub {
             self.cfg.credentials.clone(),
         );
 
-        Box::new(
-            client
-                .repos()
-                .iter(&Default::default())
-                .map(Into::into)
-                .map_err(SyncFailure::new)
-                .map_err(Error::from),
-        )
+        let user_repos =
+            client.repos().iter(&Default::default()).map(GitRepo::from);
+
+        if self.cfg.orgs {
+            Box::new(
+                user_repos
+                    .select(org_repos(&client))
+                    .map_err(SyncFailure::new)
+                    .map_err(Error::from),
+            )
+        } else {
+            Box::new(user_repos.map_err(SyncFailure::new).map_err(Error::from))
+        }
     }
 }
 
+fn org_repos<T>(
+    client: &hubcaps::Github<T>,
+) -> impl Stream<Item = GitRepo, Error = hubcaps::Error>
+where
+    T: Clone + hyper::client::connect::Connect,
+{
+    let c2 = client.clone();
+    client
+        .orgs()
+        .list()
+        .map(|orgs| {
+            stream::iter_ok::<_, hubcaps::Error>(
+                orgs.into_iter().map(|org| org.login),
+            )
+        }).flatten_stream()
+        .map(move |org| c2.org_repos(org).iter(&Default::default()))
+        .flatten()
+        .map(GitRepo::from)
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
 pub struct GitHubConfig {
+    /// The user-agent to use.
+    #[serde(default)]
     pub agent: String,
+    /// Should we include starred repositories?
+    #[serde(default)]
+    pub starred: bool,
+    /// Should we include repositories from organisations you belong to?
+    #[serde(default)]
+    pub orgs: bool,
     #[serde(with = "cred_serde_shim")]
-    pub credentials: Option<Credentials>,
+    pub credentials: Credentials,
 }
 
 impl GitHubConfig {
@@ -57,7 +90,9 @@ impl Default for GitHubConfig {
     fn default() -> GitHubConfig {
         GitHubConfig {
             agent: GitHubConfig::DEFAULT_AGENT.into(),
-            credentials: None,
+            credentials: Credentials::Token(String::new()),
+            starred: true,
+            orgs: true,
         }
     }
 }
@@ -68,17 +103,17 @@ mod cred_serde_shim {
     use serde::ser::{Serialize, Serializer};
 
     pub fn serialize<S: Serializer>(
-        creds: &Option<Credentials>,
+        creds: &Credentials,
         ser: S,
     ) -> Result<S::Ok, S::Error> {
-        creds.clone().map(Shim::from).serialize(ser)
+        Shim::from(creds.clone()).serialize(ser)
     }
 
     pub fn deserialize<'de, D: Deserializer<'de>>(
         de: D,
-    ) -> Result<Option<Credentials>, D::Error> {
-        let shim = Option::<Shim>::deserialize(de)?;
-        Ok(shim.map(Into::into))
+    ) -> Result<Credentials, D::Error> {
+        let shim = Shim::deserialize(de)?;
+        Ok(shim.into())
     }
 
     #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
