@@ -1,149 +1,121 @@
-//! Configuration for `repo-backup`.
+use serde::de::{
+    Deserialize, DeserializeOwned, Deserializer, Error as DeError,
+};
+use serde::ser::{Error as SerError, Serialize, Serializer};
+use std::collections::BTreeMap;
+use std::fmt::{self, Display, Formatter};
+use std::path::PathBuf;
+use toml::Value;
 
-use sec::Secret;
-use serde::de::{Deserialize, Deserializer};
-use std::fs::File;
-use std::io::Read;
-use std::path::{Path, PathBuf};
-
-use failure::{Error, ResultExt};
-use toml;
-
-/// The overall configuration struct.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct Config {
-    /// General configuration options.
     pub general: General,
-    /// Settings specific to the `Github` provider.
-    pub github: Option<GithubConfig>,
-    /// Settings for the `GitLab` provider.
-    pub gitlab: Option<GitLabConfig>,
-}
-
-/// General settings used by `repo-backup`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub struct General {
-    /// The root directory to place all downloaded repositories.
-    pub dest_dir: PathBuf,
-    /// The maximum number of errors that can be encountered before bailing.
-    #[serde(default, deserialize_with = "deserialize_error_threshold")]
-    pub max_error_threshold: Option<usize>,
-}
-
-fn deserialize_error_threshold<'de, D: Deserializer<'de>>(
-    de: D,
-) -> Result<Option<usize>, D::Error> {
-    let raw: Option<usize> = Deserialize::deserialize(de)?;
-    if raw == Some(0) {
-        Ok(None)
-    } else {
-        Ok(raw)
-    }
-}
-
-/// Github-specific settings.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub struct GithubConfig {
-    /// The API key to use. You will need to [create a new personal access
-    /// token][new] and give it the `public_repo` permissions before you can
-    /// fetch repos from GitHub.
-    ///
-    /// [new]: https://github.com/settings/tokens/new
-    pub api_key: Secret<String>,
-    /// Should we download all starred repos? (default: true)
-    #[serde(default = "always_true")]
-    pub starred: bool,
-    /// Should we download all owned repos? (default: true)
-    #[serde(default = "always_true")]
-    pub owned: bool,
-}
-
-/// Github-specific settings.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-#[allow(deprecated)]
-pub struct GitLabConfig {
-    /// The API key to use. Make sure you create a new [personal access token][new]
-    /// and give it the "api" scope, if you haven't already.
-    ///
-    /// [new]: https://gitlab.com/profile/personal_access_tokens
-    pub api_key: Secret<String>,
-    /// Hostname of the GitLab instance to fetch repositories from.
-    #[serde(default = "default_gitlab_url")]
-    pub host: String,
-    /// Should we download all repos owned by organisations you are a part of?
-    /// (default: false)
-    #[serde(default = "always_false")]
-    pub organisations: bool,
-    /// Should we download all owned repos? (default: true)
-    #[serde(default = "always_true")]
-    pub owned: bool,
-}
-
-fn always_true() -> bool {
-    true
-}
-
-fn always_false() -> bool {
-    false
-}
-
-fn default_gitlab_url() -> String {
-    String::from("https://gitlab.com/")
+    pub rest: BTreeMap<String, Value>,
 }
 
 impl Config {
-    /// Load a `Config` from some file on disk.
-    pub fn from_file<P: AsRef<Path>>(file: P) -> Result<Config, Error> {
-        let file = file.as_ref();
-        debug!("Reading config from {}", file.display());
-
-        let mut buffer = String::new();
-        File::open(file)
-            .with_context(|_| format!("Unable to open {}", file.display()))?
-            .read_to_string(&mut buffer)
-            .context("Reading config file failed")?;
-
-        Config::from_str(&buffer)
+    pub fn from_toml(raw: &str) -> Result<Config, toml::de::Error> {
+        toml::from_str(raw)
     }
 
-    /// Load the config directly from a source string.
-    pub fn from_str(src: &str) -> Result<Config, Error> {
-        toml::from_str(src)
-            .context("Parsing config file failed")
-            .map_err(Error::from)
+    pub fn get_deserialized<D: DeserializeOwned>(
+        &self,
+        key: &str,
+    ) -> Result<D, ConfigError> {
+        self.rest
+            .get(key)
+            .ok_or(ConfigError::MissingKey)
+            .and_then(|v| v.clone().try_into().map_err(ConfigError::Toml))
     }
+}
 
-    /// Generate an example config.
-    pub fn example() -> Config {
-        Config {
+#[derive(Debug, Clone, Fail)]
+pub enum ConfigError {
+    MissingKey,
+    Toml(toml::de::Error),
+}
+
+impl Display for ConfigError {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            ConfigError::MissingKey => write!(f, "missing key"),
+            ConfigError::Toml(ref t) => t.fmt(f),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct General {
+    /// The top-level directory all backups should be placed in.
+    pub root: PathBuf,
+    pub threads: usize,
+    /// The maximum number of errors allowed before declaring the entire backup
+    /// as failed.
+    ///
+    /// A threshold of `0` means there's no limit.
+    pub error_threshold: usize,
+    pub blacklist: Vec<PathBuf>,
+}
+
+impl Default for General {
+    fn default() -> General {
+        General {
+            root: PathBuf::from("."),
+            threads: num_cpus::get(),
+            error_threshold: 0,
+            blacklist: Vec::new(),
+        }
+    }
+}
+
+impl Serialize for Config {
+    fn serialize<S: Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
+        let mut merged = self.rest.clone();
+        let general =
+            Value::try_from(&self.general).map_err(S::Error::custom)?;
+        merged.insert("general".into(), general);
+
+        merged.serialize(ser)
+    }
+}
+
+impl<'de> Deserialize<'de> for Config {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        let mut merged = BTreeMap::<String, Value>::deserialize(de)?;
+        let general = match merged.remove("general") {
+            Some(got) => got.try_into().map_err(D::Error::custom)?,
+            None => Default::default(),
+        };
+
+        Ok(Config {
+            general,
+            rest: merged,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn round_trip_the_config() {
+        let cfg = Config {
             general: General {
-                dest_dir: PathBuf::from("/srv"),
-                max_error_threshold: None,
+                root: PathBuf::from("/path/to/backups"),
+                threads: 42,
+                error_threshold: 5,
+                blacklist: Vec::new(),
             },
-            github: Some(GithubConfig {
-                api_key: String::from("your API key").into(),
-                owned: true,
-                starred: false,
-            }),
-            gitlab: Some(GitLabConfig {
-                api_key: String::from("your API key").into(),
-                host: String::from("gitlab.com"),
-                organisations: true,
-                owned: true,
-            }),
-        }
-    }
+            rest: vec![(String::from("first"), Value::Integer(1))]
+                .into_iter()
+                .collect(),
+        };
 
-    /// Serialize the `Config` as TOML.
-    pub fn as_toml(&self) -> String {
-        match toml::to_string_pretty(self) {
-            Ok(s) => s,
-            Err(e) => {
-                panic!("Serializing a Config should never fail. {}", e);
-            }
-        }
+        let as_str = toml::to_string(&cfg).unwrap();
+        let round_tripped: Config = toml::from_str(&as_str).unwrap();
+
+        assert_eq!(round_tripped, cfg);
     }
 }

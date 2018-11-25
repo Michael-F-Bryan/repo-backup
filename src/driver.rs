@@ -1,157 +1,386 @@
-use failure::{Error, ResultExt};
-use std::io::Write;
+use actix::{
+    Actor, Arbiter, AsyncContext, Context, Handler, Recipient, SyncArbiter,
+    System,
+};
+use crate::config::{Config, ConfigError};
+use crate::git::{DownloadRepo, GitClone, GitRepo};
+use crate::providers::{GitHub, GitLab, Provider};
+use failure::Error;
+use futures::future::{self, Future};
+use futures::stream::{self, Stream};
+use serde::Deserialize;
+use slog::Logger;
+use std::fs;
 use std::path::Path;
 
-use config::Config;
-use github::GitHub;
-use gitlab_provider::GitLab;
-use {Provider, Repo};
+macro_rules! try {
+    ($result:expr, $logger:expr) => {
+        try!($result, $logger, "Oops...");
+    };
+    ($result:expr, $logger:expr, $err_msg:expr) => {
+        match $result {
+            Ok(r) => r,
+            Err(e) => {
+                let err_msg = $err_msg;
+                let logger = $logger;
+                error!(logger, "{}", err_msg; "error" => e.to_string());
 
-/// A driver for orchestrating the process of fetching a list of repositories
-/// and then downloading each of them.
-#[derive(Debug, Clone)]
+                return 1;
+            }
+        }
+    };
+}
+
+pub fn run<P: AsRef<Path>>(config: P, logger: Logger) -> i32 {
+    let config = config.as_ref();
+
+    let cfg = try!(
+        fs::read_to_string(&config)
+            .map_err(Error::from)
+            .and_then(|s| Config::from_toml(&s).map_err(Error::from)),
+        &logger,
+        "Unable to load the config"
+    );
+
+    let sys = System::new("repo-backup");
+
+    let mut driver = Driver::new(cfg.clone(), logger.clone());
+    register_providers(&mut driver, &cfg, &logger);
+    driver.start();
+
+    info!(logger, "Started the backup process"; 
+        "config-file" => config.display(),
+        "root" => cfg.general.root.display(),
+        "threads" => cfg.general.threads,
+        "error-threshold" => cfg.general.error_threshold);
+    sys.run()
+}
+
+fn register_providers(driver: &mut Driver, cfg: &Config, logger: &Logger) {
+    debug!(logger, "Registering providers");
+
+    try_register("github", &cfg, driver, logger, |got, logger| {
+        debug!(logger, "Registering the GitHub provider");
+        GitHub::new(got, logger.clone())
+    });
+    try_register("gitlab", &cfg, driver, logger, |got, logger| {
+        debug!(logger, "Registering the GitLab provider");
+        GitLab::new(got, logger.clone())
+    });
+}
+
+/// Try to parse the corresponding section from a `Config`, if successful use
+/// the resulting value to construct a `Provider` to be registered with the
+/// `Driver`.
+fn try_register<F, P, C>(
+    key: &str,
+    cfg: &Config,
+    driver: &mut Driver,
+    logger: &Logger,
+    then: F,
+) where
+    F: FnOnce(C, &Logger) -> P,
+    P: Provider + 'static,
+    C: for<'de> Deserialize<'de>,
+{
+    match cfg.get_deserialized(key) {
+        Ok(got) => {
+            let provider = then(got, logger);
+            driver.register(provider);
+        }
+        Err(ConfigError::Toml(toml)) => {
+            warn!(logger, "Unable to parse the \"{}\" config section", key;
+                "error" => toml.to_string());
+        }
+        Err(ConfigError::MissingKey) => {}
+    }
+}
+
 pub struct Driver {
     config: Config,
+    logger: Logger,
+    providers: Vec<Box<Provider>>,
+    gits: Recipient<DownloadRepo>,
+    stats: Statistics,
 }
 
 impl Driver {
-    /// Create a new `Driver` with the provided config.
-    pub fn with_config(config: Config) -> Driver {
-        Driver { config }
+    /// Create a new driver which will download repositories on a background
+    /// thread pool.
+    pub fn new(config: Config, logger: Logger) -> Driver {
+        let l2 = logger.clone();
+        let root = config.general.root.clone();
+        let gits = SyncArbiter::start(config.general.threads, move || {
+            GitClone::new(root.clone(), l2.clone())
+        });
+
+        Driver::new_with_recipient(config, logger, gits.recipient())
     }
 
-    /// Download a list of all repositories from the `Provider`s found in the
-    /// configuration file, then fetch any recent changes (running `git clone`
-    /// if necessary).
-    pub fn run(&self) -> Result<(), Error> {
-        info!("Starting repository backup");
-
-        let providers = get_providers(&self.config)?;
-        let repos = self.get_repos_from_providers(&providers)?;
-        self.update_repos(&repos)?;
-
-        info!("Finished repository backup");
-        Ok(())
+    pub fn new_with_recipient(
+        config: Config,
+        logger: Logger,
+        gits: Recipient<DownloadRepo>,
+    ) -> Driver {
+        Driver {
+            config,
+            logger,
+            providers: Vec::new(),
+            gits,
+            stats: Statistics::default(),
+        }
     }
 
-    /// Update the provided repositories.
-    pub fn update_repos(&self, repos: &[Repo]) -> Result<(), UpdateFailure> {
-        info!("Updating repositories");
-        let mut errors = Vec::new();
+    pub fn register<P: Provider + 'static>(
+        &mut self,
+        provider: P,
+    ) -> &mut Self {
+        self.providers.push(Box::new(provider));
+        self
+    }
 
-        for repo in repos {
-            if let Err(e) = self.update_repo(repo) {
-                warn!("Updating {} failed, {}", repo.name, e);
-                errors.push((repo.clone(), e));
-            }
+    pub fn do_register<F, P>(&mut self, constructor: F) -> &mut Self
+    where
+        F: FnOnce(&Config, &Logger) -> P,
+        P: Provider + 'static,
+    {
+        let provider = constructor(&self.config, &self.logger);
+        self.register(provider);
+        self
+    }
+}
 
-            if let Some(max_errors) = self.config.general.max_error_threshold {
-                if errors.len() >= max_errors {
-                    error!("Too many errors, bailing...");
-                    break;
+impl Actor for Driver {
+    type Context = Context<Driver>;
+
+    fn started(&mut self, ctx: &mut Self::Context) {
+        let repos = stream::iter_ok::<_, Error>(
+            self.providers
+                .iter()
+                .map(|p| p.repositories())
+                .collect::<Vec<_>>(),
+        ).flatten();
+
+        let gits = self.gits.clone();
+        let blacklist = self.config.general.blacklist.clone();
+        let logger = self.logger.clone();
+
+        let started_downloading = repos
+            .filter(move |repo| {
+                let ignore = blacklist
+                    .iter()
+                    .any(|item| Path::new(&item) == &repo.dest_dir);
+
+                if ignore {
+                    info!(logger, "Ignoring repo";
+                            "dest-dir" => repo.dest_dir.display());
                 }
-            }
-        }
+                !ignore
+            }).and_then(move |repo| {
+                (
+                    future::ok(repo.clone()),
+                    gits.send(DownloadRepo(repo)).from_err(),
+                )
+            });
 
-        if errors.is_empty() {
+        let this = ctx.address();
+        let finished_downloading =
+            started_downloading.and_then(move |(repo, outcome)| {
+                this.send(Done { repo, outcome }).from_err()
+            });
+
+        let logger = self.logger.clone();
+        let this = ctx.address();
+        Arbiter::spawn(
+            finished_downloading
+                .for_each(|_| future::ok(()))
+                .map_err(
+                    move |e| error!(logger, "Error!"; "error" => e.to_string()),
+                ).then(move |_| this.send(Stop).map_err(|_| ())),
+        );
+    }
+}
+
+#[derive(Debug, Message)]
+struct Stop;
+
+impl Handler<Stop> for Driver {
+    type Result = ();
+
+    fn handle(&mut self, _msg: Stop, _ctx: &mut Self::Context) {
+        info!(self.logger, "Stopping...";
+            "error-count" => self.stats.error_count,
+            "successful-updates" => self.stats.success);
+        System::current().stop();
+    }
+}
+
+#[derive(Debug, Message)]
+struct Done {
+    pub repo: GitRepo,
+    pub outcome: Result<(), Error>,
+}
+
+impl Handler<Done> for Driver {
+    type Result = ();
+
+    fn handle(&mut self, msg: Done, _ctx: &mut Self::Context) {
+        if let Err(e) = msg.outcome {
+            warn!(self.logger, "Error backing up a repository";
+                "error" => e.to_string(),
+                "dest" => msg.repo.dest_dir.display(),
+                "url" => &msg.repo.ssh_url);
+
+            for cause in e.iter_causes() {
+                warn!(self.logger, "Caused By"; "cause" => cause.to_string());
+            }
+
+            self.stats.error_count += 1;
+            let threshold = self.config.general.error_threshold;
+
+            if threshold > 0 && self.stats.error_count >= threshold {
+                error!(self.logger, "Too many errors were encountered. Bailing";
+                    "error-count" => self.stats.error_count);
+
+                System::current().stop_with_code(1);
+            }
+        } else {
+            info!(self.logger, "Successfully backed up a repo";
+                "repo" => msg.repo.dest_dir.display());
+            self.stats.success += 1;
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Statistics {
+    error_count: usize,
+    success: usize,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::git::GitRepo;
+    use slog::Discard;
+    use std::path::PathBuf;
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Default, Debug, Clone)]
+    struct Mock {
+        repos: Arc<Mutex<Vec<DownloadRepo>>>,
+    }
+
+    impl Actor for Mock {
+        type Context = Context<Mock>;
+    }
+
+    impl Handler<DownloadRepo> for Mock {
+        type Result = Result<(), Error>;
+
+        fn handle(
+            &mut self,
+            msg: DownloadRepo,
+            _ctx: &mut Self::Context,
+        ) -> Self::Result {
+            self.repos.lock().unwrap().push(msg);
             Ok(())
-        } else {
-            Err(UpdateFailure { errors })
         }
     }
 
-    fn update_repo(&self, repo: &Repo) -> Result<(), Error> {
-        let dest_dir = self.config.general.dest_dir.join(repo.full_name());
+    struct DodgyActor;
 
-        if dest_dir.exists() {
-            debug!("Fetching updates for {}", repo.full_name());
-            fetch_updates(&dest_dir)?;
-        } else {
-            debug!("Cloning into {}", dest_dir.display());
-            clone_repo(&dest_dir, repo)?;
+    impl Actor for DodgyActor {
+        type Context = Context<DodgyActor>;
+    }
+
+    impl Handler<DownloadRepo> for DodgyActor {
+        type Result = Result<(), Error>;
+
+        fn handle(
+            &mut self,
+            _msg: DownloadRepo,
+            _ctx: &mut Self::Context,
+        ) -> Self::Result {
+            Err(failure::err_msg("Oops.."))
         }
-
-        Ok(())
     }
 
-    /// Iterate over the `Provider`s and collect all the repositories they've
-    /// found into one big list.
-    pub fn get_repos_from_providers(
-        &self,
-        providers: &[Box<Provider>],
-    ) -> Result<Vec<Repo>, Error> {
-        let mut repos = Vec::new();
+    struct MockProvider {
+        repos: Vec<GitRepo>,
+    }
 
-        for provider in providers {
-            info!("Fetching repositories from {}", provider.name());
-            let found = provider
-                .repositories()
-                .context("Unable to fetch repositories")?;
-
-            info!("Found {} repos from {}", found.len(), provider.name());
-            repos.extend(found);
+    impl Provider for MockProvider {
+        fn repositories(&self) -> Box<Stream<Item = GitRepo, Error = Error>> {
+            Box::new(stream::iter_ok(self.repos.clone()))
         }
-
-        Ok(repos)
-    }
-}
-
-fn clone_repo(dest_dir: &Path, repo: &Repo) -> Result<(), Error> {
-    cmd!("git clone --quiet {} {}", &repo.url, dest_dir.display())
-}
-
-fn fetch_updates(dest_dir: &Path) -> Result<(), Error> {
-    cmd!(in dest_dir; "git pull --ff-only --prune --quiet --recurse-submodules")
-}
-
-/// A wrapper around one or more failures during the updating process.
-#[derive(Debug, Fail)]
-#[fail(display = "One or more errors ecountered while updating repos")]
-pub struct UpdateFailure {
-    errors: Vec<(Repo, Error)>,
-}
-
-impl UpdateFailure {
-    /// Print a "backtrace" for each error encountered.
-    pub fn display<W: Write>(&self, writer: &mut W) -> Result<(), Error> {
-        writeln!(
-            writer,
-            "There were {} errors updating repositories",
-            self.errors.len()
-        )?;
-
-        for &(ref repo, ref err) in &self.errors {
-            writeln!(
-                writer,
-                "Error: {} failed with {}",
-                repo.full_name(),
-                err
-            )?;
-            for cause in err.iter_causes() {
-                writeln!(writer, "\tCaused By: {}", cause)?;
-            }
-        }
-
-        Ok(())
-    }
-}
-
-fn get_providers(cfg: &Config) -> Result<Vec<Box<Provider>>, Error> {
-    let mut providers: Vec<Box<Provider>> = Vec::new();
-
-    if let Some(gh_config) = cfg.github.as_ref() {
-        let gh = GitHub::with_config(gh_config.clone());
-        providers.push(Box::new(gh));
     }
 
-    if let Some(gl_config) = cfg.gitlab.as_ref() {
-        let gl = GitLab::with_config(gl_config.clone())?;
-        providers.push(Box::new(gl));
+    #[test]
+    fn run_driver_to_completion() {
+        let should_be = vec![
+            GitRepo {
+                dest_dir: PathBuf::from("/1"),
+                ssh_url: String::from("1"),
+            },
+            GitRepo {
+                dest_dir: PathBuf::from("/2"),
+                ssh_url: String::from("2"),
+            },
+        ];
+
+        let repos: Arc<Mutex<Vec<DownloadRepo>>> = Default::default();
+        let cfg = Config::default();
+        let logger = Logger::root(Discard, o!());
+
+        let sys = System::new("test");
+        let mock = Mock {
+            repos: Arc::clone(&repos),
+        }.start();
+        let mut driver =
+            Driver::new_with_recipient(cfg, logger, mock.recipient());
+        driver.register(MockProvider {
+            repos: should_be.clone(),
+        });
+        driver.start();
+
+        assert_eq!(sys.run(), 0);
+
+        let got = repos
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|repo| repo.0.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(got, should_be);
     }
 
-    if providers.is_empty() {
-        warn!("No providers found");
-    }
+    #[test]
+    fn stop_after_encountering_the_error_threshold() {
+        let mut cfg = Config::default();
+        cfg.general.error_threshold = 1;
 
-    Ok(providers)
+        let sys = System::new("test");
+        let mut driver = Driver::new_with_recipient(
+            cfg,
+            Logger::root(Discard, o!()),
+            DodgyActor.start().recipient(),
+        );
+        driver.register(MockProvider {
+            repos: vec![
+                GitRepo {
+                    dest_dir: PathBuf::from("/1"),
+                    ssh_url: String::from("1"),
+                },
+                GitRepo {
+                    dest_dir: PathBuf::from("/1"),
+                    ssh_url: String::from("1"),
+                },
+            ],
+        });
+        driver.start();
+
+        let code = sys.run();
+        assert_eq!(code, 1);
+    }
 }
