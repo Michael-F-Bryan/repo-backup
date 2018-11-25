@@ -27,9 +27,10 @@ impl Provider for GitLab {
     fn repositories(&self) -> Box<Stream<Item = GitRepo, Error = Error>> {
         let (tx, rx) = mpsc::unbounded();
         let cfg = self.cfg.clone();
+        let logger = self.logger.clone();
 
         thread::spawn(move || {
-            spawn_client(cfg, tx);
+            spawn_client(cfg, tx, &logger);
         });
 
         Box::new(
@@ -42,10 +43,16 @@ impl Provider for GitLab {
 fn spawn_client(
     cfg: GitLabConfig,
     tx: mpsc::UnboundedSender<Result<GitRepo, Error>>,
+    logger: &Logger,
 ) {
+    debug!(logger, "Creating the gitlab client");
+
     let client = match gitlab::Gitlab::new(cfg.hostname, cfg.api_key) {
         Ok(c) => c,
         Err(e) => {
+            warn!(logger, "Unable to create the gitlab client";
+                "error" => e.to_string());
+
             let err = SyncFailure::new(e)
                 .context("Unable to create the gitlab client");
             let _ = tx.unbounded_send(Err(err.into()));
@@ -56,6 +63,8 @@ fn spawn_client(
     let projects = match client.projects() {
         Ok(p) => p,
         Err(e) => {
+            warn!(logger, "Unable to fetch the project list";
+                "error" => e.to_string());
             let err =
                 SyncFailure::new(e).context("Unable to fetch the project list");
             let _ = tx.unbounded_send(Err(err.into()));
@@ -63,7 +72,18 @@ fn spawn_client(
         }
     };
 
+    debug!(logger, "Retreived the project list";
+        "project-count" => projects.len());
+
     for project in projects {
+        trace!(logger, "Found project";
+            "name" => &project.name_with_namespace,
+            "ssh-url" => &project.ssh_url_to_repo,
+            "description" => project.description.as_ref(),
+            "stars" => project.star_count,
+            "forks" => project.forks_count,
+            "stats" => project.statistics.as_ref().map(|stats| format!("{:?}", stats)));
+
         let repo = project_to_repo(project);
         if tx.unbounded_send(Ok(repo)).is_err() {
             // the receiver was dropped so there's no point continuing...

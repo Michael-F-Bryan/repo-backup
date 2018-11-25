@@ -1,4 +1,3 @@
-use actix::msgs::StopArbiter;
 use actix::{
     Actor, Arbiter, AsyncContext, Context, Handler, Recipient, SyncArbiter,
     System,
@@ -129,7 +128,12 @@ impl Handler<Done> for Driver {
         if let Err(e) = msg.outcome {
             warn!(self.logger, "Error backing up a repository";
                 "error" => e.to_string(),
+                "dest" => msg.repo.dest_dir.display(),
                 "url" => &msg.repo.ssh_url);
+
+            for cause in e.iter_causes() {
+                warn!(self.logger, "Caused By"; "cause" => cause.to_string());
+            }
 
             self.error_count += 1;
             let threshold = self.config.general.error_threshold;
@@ -138,7 +142,7 @@ impl Handler<Done> for Driver {
                 error!(self.logger, "Too many errors were encountered. Bailing";
                     "error-count" => self.error_count);
 
-                System::current().arbiter().do_send(StopArbiter(1));
+                System::current().stop_with_code(1);
             }
         }
     }
@@ -266,9 +270,7 @@ mod tests {
         });
         driver.start();
 
-        let _code = sys.run();
-
-        // FIXME: Figure out how to stop the system with an error code
-        // assert_eq!(code, 1);
+        let code = sys.run();
+        assert_eq!(code, 1);
     }
 }
