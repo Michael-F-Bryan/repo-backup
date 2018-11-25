@@ -55,6 +55,7 @@ pub struct General {
     ///
     /// A threshold of `0` means there's no limit.
     pub error_threshold: usize,
+    pub blacklist: Vec<PathBuf>,
 }
 
 impl Default for General {
@@ -63,6 +64,7 @@ impl Default for General {
             root: PathBuf::from("."),
             threads: num_cpus::get(),
             error_threshold: 0,
+            blacklist: Vec::new(),
         }
     }
 }
@@ -104,6 +106,7 @@ mod tests {
                 root: PathBuf::from("/path/to/backups"),
                 threads: 42,
                 error_threshold: 5,
+                blacklist: Vec::new(),
             },
             rest: vec![(String::from("first"), Value::Integer(1))]
                 .into_iter()

@@ -31,6 +31,7 @@ impl Provider for GitLab {
 
         thread::spawn(move || {
             spawn_client(cfg, tx, &logger);
+            debug!(logger, "Finished fetching GitLab repos");
         });
 
         Box::new(
@@ -59,7 +60,7 @@ fn spawn_client(
 
     debug!(logger, "Fetching GitLab projects");
 
-    let projects = match client.projects() {
+    let projects = match client.owned_projects() {
         Ok(p) => p,
         Err(e) => {
             warn!(logger, "Unable to fetch the project list";
@@ -93,7 +94,9 @@ fn spawn_client(
 
 fn project_to_repo(project: gitlab::Project) -> GitRepo {
     GitRepo {
-        dest_dir: Path::new("gitlab").join(project.name_with_namespace),
+        dest_dir: Path::new("gitlab")
+            .join(project.namespace.name)
+            .join(project.name),
         ssh_url: project.ssh_url_to_repo,
     }
 }

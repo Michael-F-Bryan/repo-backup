@@ -162,13 +162,26 @@ impl Actor for Driver {
         ).flatten();
 
         let gits = self.gits.clone();
+        let blacklist = self.config.general.blacklist.clone();
+        let logger = self.logger.clone();
 
-        let started_downloading = repos.and_then(move |repo| {
-            (
-                future::ok(repo.clone()),
-                gits.send(DownloadRepo(repo)).from_err(),
-            )
-        });
+        let started_downloading = repos
+            .filter(move |repo| {
+                let ignore = blacklist
+                    .iter()
+                    .any(|item| Path::new(&item) == &repo.dest_dir);
+
+                if ignore {
+                    info!(logger, "Ignoring repo";
+                            "dest-dir" => repo.dest_dir.display());
+                }
+                !ignore
+            }).and_then(move |repo| {
+                (
+                    future::ok(repo.clone()),
+                    gits.send(DownloadRepo(repo)).from_err(),
+                )
+            });
 
         let this = ctx.address();
         let finished_downloading =
@@ -230,7 +243,7 @@ impl Handler<Done> for Driver {
                 System::current().stop_with_code(1);
             }
         } else {
-            debug!(self.logger, "Successfully backed up a repo";
+            info!(self.logger, "Successfully backed up a repo";
                 "repo" => msg.repo.dest_dir.display());
         }
     }
