@@ -2,13 +2,99 @@ use actix::{
     Actor, Arbiter, AsyncContext, Context, Handler, Recipient, SyncArbiter,
     System,
 };
+use crate::config::{Config, ConfigError};
 use crate::git::{DownloadRepo, GitClone, GitRepo};
-use crate::providers::Provider;
-use crate::Config;
+use crate::providers::{GitHub, GitLab, Provider};
 use failure::Error;
 use futures::future::{self, Future};
 use futures::stream::{self, Stream};
+use serde::Deserialize;
 use slog::Logger;
+use std::fs;
+use std::path::Path;
+
+macro_rules! try {
+    ($result:expr, $logger:expr) => {
+        try!($result, $logger, "Oops...");
+    };
+    ($result:expr, $logger:expr, $err_msg:expr) => {
+        match $result {
+            Ok(r) => r,
+            Err(e) => {
+                let err_msg = $err_msg;
+                let logger = $logger;
+                error!(logger, "{}", err_msg; "error" => e.to_string());
+
+                return 1;
+            }
+        }
+    };
+}
+
+pub fn run<P: AsRef<Path>>(config: P, logger: Logger) -> i32 {
+    let config = config.as_ref();
+
+    let cfg = try!(
+        fs::read_to_string(&config)
+            .map_err(Error::from)
+            .and_then(|s| Config::from_toml(&s).map_err(Error::from)),
+        &logger,
+        "Unable to load the config"
+    );
+
+    let sys = System::new("repo-backup");
+
+    let mut driver = Driver::new(cfg.clone(), logger.clone());
+    register_providers(&mut driver, &cfg, &logger);
+    driver.start();
+
+    info!(logger, "Started the backup process"; 
+        "config-file" => config.display(),
+        "root" => cfg.general.root.display(),
+        "threads" => cfg.general.threads,
+        "error-threshold" => cfg.general.error_threshold);
+    sys.run()
+}
+
+fn register_providers(driver: &mut Driver, cfg: &Config, logger: &Logger) {
+    debug!(logger, "Registering providers");
+
+    try_register("github", &cfg, driver, logger, |got, logger| {
+        debug!(logger, "Registering the GitHub provider");
+        GitHub::new(got, logger.clone())
+    });
+    try_register("gitlab", &cfg, driver, logger, |got, logger| {
+        debug!(logger, "Registering the GitLab provider");
+        GitLab::new(got, logger.clone())
+    });
+}
+
+/// Try to parse the corresponding section from a `Config`, if successful use
+/// the resulting value to construct a `Provider` to be registered with the
+/// `Driver`.
+fn try_register<F, P, C>(
+    key: &str,
+    cfg: &Config,
+    driver: &mut Driver,
+    logger: &Logger,
+    then: F,
+) where
+    F: FnOnce(C, &Logger) -> P,
+    P: Provider + 'static,
+    C: for<'de> Deserialize<'de>,
+{
+    match cfg.get_deserialized(key) {
+        Ok(got) => {
+            let provider = then(got, logger);
+            driver.register(provider);
+        }
+        Err(ConfigError::Toml(toml)) => {
+            warn!(logger, "Unable to parse the \"{}\" config section", key;
+                "error" => toml.to_string());
+        }
+        Err(ConfigError::MissingKey) => {}
+    }
+}
 
 pub struct Driver {
     config: Config,
@@ -95,10 +181,9 @@ impl Actor for Driver {
         Arbiter::spawn(
             finished_downloading
                 .for_each(|_| future::ok(()))
-                .map_err(move |e| {
-                    error!(logger, "Error!";
-                "error" => e.to_string())
-                }).then(move |_| this.send(Stop).map_err(|_| ())),
+                .map_err(
+                    move |e| error!(logger, "Error!"; "error" => e.to_string()),
+                ).then(move |_| this.send(Stop).map_err(|_| ())),
         );
     }
 }
@@ -144,6 +229,9 @@ impl Handler<Done> for Driver {
 
                 System::current().stop_with_code(1);
             }
+        } else {
+            debug!(self.logger, "Successfully backed up a repo";
+                "repo" => msg.repo.dest_dir.display());
         }
     }
 }

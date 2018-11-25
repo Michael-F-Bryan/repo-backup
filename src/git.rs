@@ -24,10 +24,14 @@ impl Actor for GitClone {
 impl Handler<DownloadRepo> for GitClone {
     type Result = Result<(), Error>;
 
-    fn handle(&mut self, msg: DownloadRepo, _ctx: &mut Self::Context) -> Self::Result {
+    fn handle(
+        &mut self,
+        msg: DownloadRepo,
+        _ctx: &mut Self::Context,
+    ) -> Self::Result {
         let DownloadRepo(GitRepo { ssh_url, dest_dir }) = msg;
 
-        debug!(self.logger, "Started downloading a repository";
+        debug!(self.logger, "Downloading a repository";
             "dest-dir" => dest_dir.display(),
             "url" => &ssh_url);
 
@@ -35,10 +39,12 @@ impl Handler<DownloadRepo> for GitClone {
         let dest_dir = self.root.join(dest_dir);
 
         if dest_dir.exists() {
-            debug!(self.logger, "Fetching updates"; "ssh-url" => &ssh_url);
+            debug!(self.logger, "Fetching updates"; 
+            "dir" => dest_dir.display());
             fetch_updates(&dest_dir)
         } else {
-            debug!(self.logger, "Cloning into repo"; "ssh-url" => &ssh_url);
+            debug!(self.logger, "Cloning into repo"; 
+            "dir" => dest_dir.display());
             do_clone(&dest_dir, &ssh_url)
         }
     }
@@ -63,7 +69,7 @@ pub struct GitRepo {
 impl From<hubcaps::repositories::Repo> for GitRepo {
     fn from(other: hubcaps::repositories::Repo) -> GitRepo {
         GitRepo {
-            dest_dir: PathBuf::from(other.full_name),
+            dest_dir: Path::new("github").join(other.full_name),
             ssh_url: other.ssh_url,
         }
     }
@@ -129,8 +135,8 @@ fn can_update_git_repo(repo_dir: &Path) -> Result<(), Error> {
     let output = cmd!("git", "status", "--porcelain"; in repo_dir)
         .context("Unable to check for unsaved changes")?;
 
-    let stdout =
-        String::from_utf8(output.stdout).context("Can't parse output from `git status`")?;
+    let stdout = String::from_utf8(output.stdout)
+        .context("Can't parse output from `git status`")?;
     let lines = stdout.lines().count();
 
     if lines > 0 {

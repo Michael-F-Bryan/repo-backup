@@ -14,6 +14,10 @@ pub struct Config {
 }
 
 impl Config {
+    pub fn from_toml(raw: &str) -> Result<Config, toml::de::Error> {
+        toml::from_str(raw)
+    }
+
     pub fn get_deserialized<D: DeserializeOwned>(
         &self,
         key: &str,

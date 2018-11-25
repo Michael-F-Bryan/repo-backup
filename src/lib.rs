@@ -23,5 +23,5 @@ mod git;
 pub mod providers;
 
 pub use crate::config::Config;
-pub use crate::driver::Driver;
+pub use crate::driver::{run, Driver};
 pub use crate::git::GitRepo;

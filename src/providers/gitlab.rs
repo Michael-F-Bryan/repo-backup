@@ -45,20 +45,19 @@ fn spawn_client(
     tx: mpsc::UnboundedSender<Result<GitRepo, Error>>,
     logger: &Logger,
 ) {
-    debug!(logger, "Creating the gitlab client");
+    debug!(logger, "Creating the GitLab client");
 
     let client = match gitlab::Gitlab::new(cfg.hostname, cfg.api_key) {
         Ok(c) => c,
         Err(e) => {
-            warn!(logger, "Unable to create the gitlab client";
-                "error" => e.to_string());
-
             let err = SyncFailure::new(e)
-                .context("Unable to create the gitlab client");
+                .context("Unable to create the GitLab client");
             let _ = tx.unbounded_send(Err(err.into()));
             return;
         }
     };
+
+    debug!(logger, "Fetching GitLab projects");
 
     let projects = match client.projects() {
         Ok(p) => p,
@@ -100,17 +99,21 @@ fn project_to_repo(project: gitlab::Project) -> GitRepo {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
 pub struct GitLabConfig {
+    #[serde(default = "default_hostname")]
     pub hostname: String,
     pub api_key: String,
+}
+
+fn default_hostname() -> String {
+    DEFAULT_HOSTNAME.to_string()
 }
 
 impl Default for GitLabConfig {
     fn default() -> GitLabConfig {
         GitLabConfig {
-            hostname: DEFAULT_HOSTNAME.to_string(),
+            hostname: default_hostname(),
             api_key: String::new(),
         }
     }
