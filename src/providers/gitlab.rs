@@ -95,8 +95,8 @@ fn spawn_client(
 fn project_to_repo(project: gitlab::Project) -> GitRepo {
     GitRepo {
         dest_dir: Path::new("gitlab")
-            .join(project.namespace.name)
-            .join(project.name),
+            .join(project.namespace.path)
+            .join(project.path),
         ssh_url: project.ssh_url_to_repo,
     }
 }
