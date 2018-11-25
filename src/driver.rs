@@ -101,7 +101,7 @@ pub struct Driver {
     logger: Logger,
     providers: Vec<Box<Provider>>,
     gits: Recipient<DownloadRepo>,
-    error_count: usize,
+    stats: Statistics,
 }
 
 impl Driver {
@@ -127,7 +127,7 @@ impl Driver {
             logger,
             providers: Vec::new(),
             gits,
-            error_count: 0,
+            stats: Statistics::default(),
         }
     }
 
@@ -208,7 +208,9 @@ impl Handler<Stop> for Driver {
     type Result = ();
 
     fn handle(&mut self, _msg: Stop, _ctx: &mut Self::Context) {
-        info!(self.logger, "Stopping...");
+        info!(self.logger, "Stopping...";
+            "error-count" => self.stats.error_count,
+            "successful-updates" => self.stats.success);
         System::current().stop();
     }
 }
@@ -233,20 +235,27 @@ impl Handler<Done> for Driver {
                 warn!(self.logger, "Caused By"; "cause" => cause.to_string());
             }
 
-            self.error_count += 1;
+            self.stats.error_count += 1;
             let threshold = self.config.general.error_threshold;
 
-            if threshold > 0 && self.error_count >= threshold {
+            if threshold > 0 && self.stats.error_count >= threshold {
                 error!(self.logger, "Too many errors were encountered. Bailing";
-                    "error-count" => self.error_count);
+                    "error-count" => self.stats.error_count);
 
                 System::current().stop_with_code(1);
             }
         } else {
             info!(self.logger, "Successfully backed up a repo";
                 "repo" => msg.repo.dest_dir.display());
+            self.stats.success += 1;
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Statistics {
+    error_count: usize,
+    success: usize,
 }
 
 #[cfg(test)]
