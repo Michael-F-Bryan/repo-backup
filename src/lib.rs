@@ -2,19 +2,14 @@
 extern crate actix;
 use failure;
 
-
 #[macro_use]
 extern crate failure_derive;
-
 
 #[macro_use]
 extern crate slog;
 
-
 #[macro_use]
 extern crate serde_derive;
-
-
 
 pub mod config;
 mod driver;

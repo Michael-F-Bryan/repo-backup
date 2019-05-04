@@ -51,8 +51,7 @@ fn spawn_client(
     let client = match gitlab::Gitlab::new(cfg.hostname, cfg.api_key) {
         Ok(c) => c,
         Err(e) => {
-            let err = SyncFailure::new(e)
-                .context("Unable to create the GitLab client");
+            let err = SyncFailure::new(e).context("Unable to create the GitLab client");
             let _ = tx.unbounded_send(Err(err.into()));
             return;
         }
@@ -65,8 +64,7 @@ fn spawn_client(
         Err(e) => {
             warn!(logger, "Unable to fetch the project list";
                 "error" => e.to_string());
-            let err =
-                SyncFailure::new(e).context("Unable to fetch the project list");
+            let err = SyncFailure::new(e).context("Unable to fetch the project list");
             let _ = tx.unbounded_send(Err(err.into()));
             return;
         }
@@ -94,7 +92,7 @@ fn spawn_client(
 
 fn project_to_repo(project: gitlab::Project) -> GitRepo {
     GitRepo {
-        dest_dir: Path::new("gitlab")
+        dest_dir: Path::new("gitlab.com")
             .join(project.namespace.path)
             .join(project.path),
         ssh_url: project.ssh_url_to_repo,

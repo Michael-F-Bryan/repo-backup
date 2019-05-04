@@ -28,10 +28,7 @@ pub struct Args {
         help = "Generate verbose output"
     )]
     verbosity: usize,
-    #[structopt(
-        help = "The config file",
-        default_value = "~/.repo-backup.toml"
-    )]
+    #[structopt(help = "The config file", default_value = "~/.repo-backup.toml")]
     config: String,
 }
 

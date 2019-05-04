@@ -1,10 +1,7 @@
-use actix::{
-    Actor, Arbiter, AsyncContext, Context, Handler, Recipient, SyncArbiter,
-    System,
-};
 use crate::config::{Config, ConfigError};
 use crate::git::{DownloadRepo, GitClone, GitRepo};
 use crate::providers::{GitHub, GitLab, Provider};
+use actix::{Actor, Arbiter, AsyncContext, Context, Handler, Recipient, SyncArbiter, System};
 use failure::Error;
 use futures::future::{self, Future};
 use futures::stream::{self, Stream};
@@ -72,13 +69,8 @@ fn register_providers(driver: &mut Driver, cfg: &Config, logger: &Logger) {
 /// Try to parse the corresponding section from a `Config`, if successful use
 /// the resulting value to construct a `Provider` to be registered with the
 /// `Driver`.
-fn try_register<F, P, C>(
-    key: &str,
-    cfg: &Config,
-    driver: &mut Driver,
-    logger: &Logger,
-    then: F,
-) where
+fn try_register<F, P, C>(key: &str, cfg: &Config, driver: &mut Driver, logger: &Logger, then: F)
+where
     F: FnOnce(C, &Logger) -> P,
     P: Provider + 'static,
     C: for<'de> Deserialize<'de>,
@@ -131,10 +123,7 @@ impl Driver {
         }
     }
 
-    pub fn register<P: Provider + 'static>(
-        &mut self,
-        provider: P,
-    ) -> &mut Self {
+    pub fn register<P: Provider + 'static>(&mut self, provider: P) -> &mut Self {
         self.providers.push(Box::new(provider));
         self
     }
@@ -159,7 +148,8 @@ impl Actor for Driver {
                 .iter()
                 .map(|p| p.repositories())
                 .collect::<Vec<_>>(),
-        ).flatten();
+        )
+        .flatten();
 
         let gits = self.gits.clone();
         let blacklist = self.config.general.blacklist.clone();
@@ -176,7 +166,8 @@ impl Actor for Driver {
                             "dest-dir" => repo.dest_dir.display());
                 }
                 !ignore
-            }).and_then(move |repo| {
+            })
+            .and_then(move |repo| {
                 (
                     future::ok(repo.clone()),
                     gits.send(DownloadRepo(repo)).from_err(),
@@ -184,19 +175,16 @@ impl Actor for Driver {
             });
 
         let this = ctx.address();
-        let finished_downloading =
-            started_downloading.and_then(move |(repo, outcome)| {
-                this.send(Done { repo, outcome }).from_err()
-            });
+        let finished_downloading = started_downloading
+            .and_then(move |(repo, outcome)| this.send(Done { repo, outcome }).from_err());
 
         let logger = self.logger.clone();
         let this = ctx.address();
         Arbiter::spawn(
             finished_downloading
                 .for_each(|_| future::ok(()))
-                .map_err(
-                    move |e| error!(logger, "Error!"; "error" => e.to_string()),
-                ).then(move |_| this.send(Stop).map_err(|_| ())),
+                .map_err(move |e| error!(logger, "Error!"; "error" => e.to_string()))
+                .then(move |_| this.send(Stop).map_err(|_| ())),
         );
     }
 }
@@ -278,11 +266,7 @@ mod tests {
     impl Handler<DownloadRepo> for Mock {
         type Result = Result<(), Error>;
 
-        fn handle(
-            &mut self,
-            msg: DownloadRepo,
-            _ctx: &mut Self::Context,
-        ) -> Self::Result {
+        fn handle(&mut self, msg: DownloadRepo, _ctx: &mut Self::Context) -> Self::Result {
             self.repos.lock().unwrap().push(msg);
             Ok(())
         }
@@ -297,11 +281,7 @@ mod tests {
     impl Handler<DownloadRepo> for DodgyActor {
         type Result = Result<(), Error>;
 
-        fn handle(
-            &mut self,
-            _msg: DownloadRepo,
-            _ctx: &mut Self::Context,
-        ) -> Self::Result {
+        fn handle(&mut self, _msg: DownloadRepo, _ctx: &mut Self::Context) -> Self::Result {
             Err(failure::err_msg("Oops.."))
         }
     }
@@ -336,9 +316,9 @@ mod tests {
         let sys = System::new("test");
         let mock = Mock {
             repos: Arc::clone(&repos),
-        }.start();
-        let mut driver =
-            Driver::new_with_recipient(cfg, logger, mock.recipient());
+        }
+        .start();
+        let mut driver = Driver::new_with_recipient(cfg, logger, mock.recipient());
         driver.register(MockProvider {
             repos: should_be.clone(),
         });
