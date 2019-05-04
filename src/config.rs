@@ -36,7 +36,7 @@ pub enum ConfigError {
 }
 
 impl Display for ConfigError {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             ConfigError::MissingKey => write!(f, "missing key"),
             ConfigError::Toml(ref t) => t.fmt(f),

@@ -9,5 +9,5 @@ pub use self::gitlab::{GitLab, GitLabConfig};
 
 /// Something which can retrieve the repositories we want to backup.
 pub trait Provider {
-    fn repositories(&self) -> Box<Stream<Item = GitRepo, Error = Error>>;
+    fn repositories(&self) -> Box<dyn Stream<Item = GitRepo, Error = Error>>;
 }

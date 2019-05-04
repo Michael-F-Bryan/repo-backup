@@ -6,6 +6,7 @@ name = "repo-backup"
 repository = "https://github.com/Michael-F-Bryan/repo-backup"
 version = "0.2.3-alpha.0"
 readme = "README.md"
+edition = "2018"
 
 [badges.appveyor]
 repository = "Michael-F-Bryan/repo-backup"

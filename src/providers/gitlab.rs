@@ -24,7 +24,7 @@ impl GitLab {
 }
 
 impl Provider for GitLab {
-    fn repositories(&self) -> Box<Stream<Item = GitRepo, Error = Error>> {
+    fn repositories(&self) -> Box<dyn Stream<Item = GitRepo, Error = Error>> {
         let (tx, rx) = mpsc::unbounded();
         let cfg = self.cfg.clone();
         let logger = self.logger.clone();

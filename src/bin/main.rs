@@ -1,10 +1,10 @@
-extern crate repo_backup;
-extern crate shellexpand;
+use repo_backup;
+use shellexpand;
 #[macro_use]
 extern crate slog;
-extern crate slog_async;
-extern crate slog_term;
-extern crate structopt;
+use slog_async;
+use slog_term;
+use structopt;
 
 use slog::{Drain, Level, Logger};
 use std::path::PathBuf;

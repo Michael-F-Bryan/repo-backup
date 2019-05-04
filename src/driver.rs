@@ -13,9 +13,9 @@ use slog::Logger;
 use std::fs;
 use std::path::Path;
 
-macro_rules! try {
+macro_rules! r#try {
     ($result:expr, $logger:expr) => {
-        try!($result, $logger, "Oops...");
+        r#try!($result, $logger, "Oops...");
     };
     ($result:expr, $logger:expr, $err_msg:expr) => {
         match $result {
@@ -34,7 +34,7 @@ macro_rules! try {
 pub fn run<P: AsRef<Path>>(config: P, logger: Logger) -> i32 {
     let config = config.as_ref();
 
-    let cfg = try!(
+    let cfg = r#try!(
         fs::read_to_string(&config)
             .map_err(Error::from)
             .and_then(|s| Config::from_toml(&s).map_err(Error::from)),
@@ -99,7 +99,7 @@ fn try_register<F, P, C>(
 pub struct Driver {
     config: Config,
     logger: Logger,
-    providers: Vec<Box<Provider>>,
+    providers: Vec<Box<dyn Provider>>,
     gits: Recipient<DownloadRepo>,
     stats: Statistics,
 }
@@ -311,7 +311,7 @@ mod tests {
     }
 
     impl Provider for MockProvider {
-        fn repositories(&self) -> Box<Stream<Item = GitRepo, Error = Error>> {
+        fn repositories(&self) -> Box<dyn Stream<Item = GitRepo, Error = Error>> {
             Box::new(stream::iter_ok(self.repos.clone()))
         }
     }

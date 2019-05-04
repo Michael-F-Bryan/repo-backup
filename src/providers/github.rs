@@ -26,7 +26,7 @@ impl GitHub {
 }
 
 impl Provider for GitHub {
-    fn repositories(&self) -> Box<Stream<Item = GitRepo, Error = Error>> {
+    fn repositories(&self) -> Box<dyn Stream<Item = GitRepo, Error = Error>> {
         debug!(self.logger, "Creating the GitHub client");
         let client = hubcaps::Github::new(
             self.cfg.agent.clone(),

@@ -156,7 +156,7 @@ struct UnsavedChanges {
 }
 
 impl Display for UnsavedChanges {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "There are {} unsaved changes", self.count)
     }
 }
