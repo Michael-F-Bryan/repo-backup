@@ -4,7 +4,6 @@ extern crate shellexpand;
 extern crate slog;
 extern crate slog_async;
 extern crate slog_term;
-#[macro_use]
 extern crate structopt;
 
 use slog::{Drain, Level, Logger};
