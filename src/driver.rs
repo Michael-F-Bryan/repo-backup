@@ -5,7 +5,7 @@ use actix::{
     Actor, Arbiter, AsyncContext, Context, Handler, Recipient, Running, StreamHandler, SyncArbiter,
     System,
 };
-use failure::Error;
+use failure::{Error, ResultExt};
 use futures::future::Future;
 use futures::stream::{self, Stream};
 use serde::Deserialize;
@@ -13,34 +13,13 @@ use slog::Logger;
 use std::fs;
 use std::path::Path;
 
-macro_rules! r#try {
-    ($result:expr, $logger:expr) => {
-        r#try!($result, $logger, "Oops...");
-    };
-    ($result:expr, $logger:expr, $err_msg:expr) => {
-        match $result {
-            Ok(r) => r,
-            Err(e) => {
-                let err_msg = $err_msg;
-                let logger = $logger;
-                error!(logger, "{}", err_msg; "error" => e.to_string());
-
-                return 1;
-            }
-        }
-    };
-}
-
-pub fn run<P: AsRef<Path>>(config: P, logger: Logger) -> i32 {
+pub fn run<P: AsRef<Path>>(config: P, logger: &Logger) -> Result<(), Error> {
     let config = config.as_ref();
 
-    let cfg = r#try!(
-        fs::read_to_string(&config)
-            .map_err(Error::from)
-            .and_then(|s| Config::from_toml(&s).map_err(Error::from)),
-        &logger,
-        "Unable to load the config"
-    );
+    let cfg = fs::read_to_string(&config)
+        .map_err(Error::from)
+        .and_then(|s| Config::from_toml(&s).map_err(Error::from))
+        .context("Unable to load the config")?;
 
     let sys = System::new("repo-backup");
 
@@ -53,7 +32,8 @@ pub fn run<P: AsRef<Path>>(config: P, logger: Logger) -> i32 {
         "root" => cfg.general.root.display(),
         "threads" => cfg.general.threads,
         "error-threshold" => cfg.general.error_threshold);
-    sys.run()
+
+    sys.run().map_err(Error::from)
 }
 
 fn register_providers(driver: &mut Driver, cfg: &Config, logger: &Logger) {
@@ -356,7 +336,7 @@ mod tests {
         });
         driver.start();
 
-        assert_eq!(sys.run(), 0);
+        assert!(sys.run().is_ok());
 
         let got = repos
             .lock()
@@ -392,7 +372,6 @@ mod tests {
         });
         driver.start();
 
-        let code = sys.run();
-        assert_eq!(code, 1);
+        assert!(sys.run().is_err());
     }
 }

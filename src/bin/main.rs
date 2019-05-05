@@ -15,8 +15,22 @@ fn main() {
     let args = Args::from_args();
     let logger = initialize_logging(&args);
 
-    let code = repo_backup::run(args.config_file(), logger);
-    process::exit(code);
+    if let Err(e) = repo_backup::run(args.config_file(), &logger) {
+        error!(logger, "Error: {}", e);
+        for cause in e.iter_causes() {
+            warn!(logger, "Caused By: {}", cause);
+        }
+
+        drop(logger);
+
+        let backtrace = e.backtrace().to_string();
+
+        if !backtrace.trim().is_empty() {
+            eprintln!("{}", backtrace);
+        }
+
+        process::exit(1);
+    }
 }
 
 #[derive(Debug, Clone, StructOpt)]
