@@ -29,7 +29,8 @@ impl Handler<DownloadRepo> for GitClone {
 
         debug!(self.logger, "Downloading a repository";
             "dest-dir" => dest_dir.display(),
-            "url" => &ssh_url);
+            "url" => &ssh_url,
+            "thread-id" => format_args!("{:?}", std::thread::current().id()));
 
         // make sure the path is absolute
         let dest_dir = self.root.join(dest_dir);

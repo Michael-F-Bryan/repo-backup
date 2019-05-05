@@ -1,9 +1,12 @@
 use crate::config::{Config, ConfigError};
 use crate::git::{DownloadRepo, GitClone, GitRepo};
 use crate::providers::{GitHub, GitLab, Provider};
-use actix::{Actor, Arbiter, AsyncContext, Context, Handler, Recipient, SyncArbiter, System};
+use actix::{
+    Actor, Arbiter, AsyncContext, Context, Handler, Recipient, Running, StreamHandler, SyncArbiter,
+    System,
+};
 use failure::Error;
-use futures::future::{self, Future};
+use futures::future::Future;
 use futures::stream::{self, Stream};
 use serde::Deserialize;
 use slog::Logger;
@@ -143,49 +146,68 @@ impl Actor for Driver {
     type Context = Context<Driver>;
 
     fn started(&mut self, ctx: &mut Self::Context) {
-        let repos = stream::iter_ok::<_, Error>(
-            self.providers
-                .iter()
-                .map(|p| p.repositories())
-                .collect::<Vec<_>>(),
-        )
-        .flatten();
+        ctx.set_mailbox_capacity(0);
 
-        let gits = self.gits.clone();
-        let blacklist = self.config.general.blacklist.clone();
+        let mut pending_repository_lists = Vec::new();
+
+        for provider in &self.providers {
+            pending_repository_lists.push(provider.repositories());
+        }
+
+        ctx.add_stream(stream::iter_ok::<_, Error>(pending_repository_lists).flatten());
+    }
+
+    fn stopped(&mut self, _ctx: &mut Self::Context) {
+        debug!(self.logger, "Stopping the driver");
+    }
+}
+
+impl StreamHandler<GitRepo, Error> for Driver {
+    fn handle(&mut self, repo: GitRepo, ctx: &mut Self::Context) {
+        debug!(self.logger, "Discovered a repository";
+            "ssh-url" => &repo.ssh_url,
+            "dest-dir" => repo.dest_dir.display());
+        self.stats.total_repos += 1;
+
+        let ignored = self
+            .config
+            .general
+            .blacklist
+            .iter()
+            .any(|item| Path::new(&item) == &repo.dest_dir);
+
+        if ignored {
+            info!(self.logger, "Ignoring repo"; "dest-dir" => repo.dest_dir.display());
+            self.stats.ignored += 1;
+            return;
+        }
+
+        let mailbox = ctx.address();
+
+        let r2 = repo.clone();
+        let fut = self
+            .gits
+            .send(DownloadRepo(repo.clone()))
+            .and_then(move |outcome| mailbox.send(Done { repo: r2, outcome }));
+
         let logger = self.logger.clone();
+        Arbiter::spawn(fut.map_err(move |e| {
+            error!(logger, "Unable to download {} because {}", repo.ssh_url, e);
+        }));
+    }
 
-        let started_downloading = repos
-            .filter(move |repo| {
-                let ignore = blacklist
-                    .iter()
-                    .any(|item| Path::new(&item) == &repo.dest_dir);
+    fn error(&mut self, err: Error, _ctx: &mut Self::Context) -> Running {
+        error!(self.logger, "Error: {}", err);
 
-                if ignore {
-                    info!(logger, "Ignoring repo";
-                            "dest-dir" => repo.dest_dir.display());
-                }
-                !ignore
-            })
-            .and_then(move |repo| {
-                (
-                    future::ok(repo.clone()),
-                    gits.send(DownloadRepo(repo)).from_err(),
-                )
-            });
+        for cause in err.iter_causes() {
+            warn!(self.logger, "Caused by: {}", cause);
+        }
 
-        let this = ctx.address();
-        let finished_downloading = started_downloading
-            .and_then(move |(repo, outcome)| this.send(Done { repo, outcome }).from_err());
+        Running::Continue
+    }
 
-        let logger = self.logger.clone();
-        let this = ctx.address();
-        Arbiter::spawn(
-            finished_downloading
-                .for_each(|_| future::ok(()))
-                .map_err(move |e| error!(logger, "Error!"; "error" => e.to_string()))
-                .then(move |_| this.send(Stop).map_err(|_| ())),
-        );
+    fn finished(&mut self, _ctx: &mut Self::Context) {
+        debug!(self.logger, "Discovered all repositories");
     }
 }
 
@@ -197,8 +219,10 @@ impl Handler<Stop> for Driver {
 
     fn handle(&mut self, _msg: Stop, _ctx: &mut Self::Context) {
         info!(self.logger, "Stopping...";
-            "error-count" => self.stats.error_count,
-            "successful-updates" => self.stats.success);
+            "failed-backups" => self.stats.error_count,
+            "successful-updates" => self.stats.success,
+            "ignored" => self.stats.ignored,
+            "total-repos" => self.stats.total_repos);
         System::current().stop();
     }
 }
@@ -212,7 +236,7 @@ struct Done {
 impl Handler<Done> for Driver {
     type Result = ();
 
-    fn handle(&mut self, msg: Done, _ctx: &mut Self::Context) {
+    fn handle(&mut self, msg: Done, ctx: &mut Self::Context) {
         if let Err(e) = msg.outcome {
             warn!(self.logger, "Error backing up a repository";
                 "error" => e.to_string(),
@@ -237,6 +261,12 @@ impl Handler<Done> for Driver {
                 "repo" => msg.repo.dest_dir.display());
             self.stats.success += 1;
         }
+
+        if self.stats.error_count + self.stats.success + self.stats.ignored
+            == self.stats.total_repos
+        {
+            ctx.notify(Stop);
+        }
     }
 }
 
@@ -244,6 +274,8 @@ impl Handler<Done> for Driver {
 pub struct Statistics {
     error_count: usize,
     success: usize,
+    ignored: usize,
+    total_repos: usize,
 }
 
 #[cfg(test)]
