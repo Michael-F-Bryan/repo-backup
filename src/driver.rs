@@ -1,46 +1,25 @@
-use actix::{
-    Actor, Arbiter, AsyncContext, Context, Handler, Recipient, SyncArbiter,
-    System,
-};
 use crate::config::{Config, ConfigError};
 use crate::git::{DownloadRepo, GitClone, GitRepo};
 use crate::providers::{GitHub, GitLab, Provider};
-use failure::Error;
-use futures::future::{self, Future};
+use actix::{
+    Actor, Arbiter, AsyncContext, Context, Handler, Recipient, Running, StreamHandler, SyncArbiter,
+    System,
+};
+use failure::{Error, ResultExt};
+use futures::future::Future;
 use futures::stream::{self, Stream};
 use serde::Deserialize;
 use slog::Logger;
 use std::fs;
 use std::path::Path;
 
-macro_rules! try {
-    ($result:expr, $logger:expr) => {
-        try!($result, $logger, "Oops...");
-    };
-    ($result:expr, $logger:expr, $err_msg:expr) => {
-        match $result {
-            Ok(r) => r,
-            Err(e) => {
-                let err_msg = $err_msg;
-                let logger = $logger;
-                error!(logger, "{}", err_msg; "error" => e.to_string());
-
-                return 1;
-            }
-        }
-    };
-}
-
-pub fn run<P: AsRef<Path>>(config: P, logger: Logger) -> i32 {
+pub fn run<P: AsRef<Path>>(config: P, logger: &Logger) -> Result<(), Error> {
     let config = config.as_ref();
 
-    let cfg = try!(
-        fs::read_to_string(&config)
-            .map_err(Error::from)
-            .and_then(|s| Config::from_toml(&s).map_err(Error::from)),
-        &logger,
-        "Unable to load the config"
-    );
+    let cfg = fs::read_to_string(&config)
+        .map_err(Error::from)
+        .and_then(|s| Config::from_toml(&s).map_err(Error::from))
+        .context("Unable to load the config")?;
 
     let sys = System::new("repo-backup");
 
@@ -53,7 +32,8 @@ pub fn run<P: AsRef<Path>>(config: P, logger: Logger) -> i32 {
         "root" => cfg.general.root.display(),
         "threads" => cfg.general.threads,
         "error-threshold" => cfg.general.error_threshold);
-    sys.run()
+
+    sys.run().map_err(Error::from)
 }
 
 fn register_providers(driver: &mut Driver, cfg: &Config, logger: &Logger) {
@@ -72,13 +52,8 @@ fn register_providers(driver: &mut Driver, cfg: &Config, logger: &Logger) {
 /// Try to parse the corresponding section from a `Config`, if successful use
 /// the resulting value to construct a `Provider` to be registered with the
 /// `Driver`.
-fn try_register<F, P, C>(
-    key: &str,
-    cfg: &Config,
-    driver: &mut Driver,
-    logger: &Logger,
-    then: F,
-) where
+fn try_register<F, P, C>(key: &str, cfg: &Config, driver: &mut Driver, logger: &Logger, then: F)
+where
     F: FnOnce(C, &Logger) -> P,
     P: Provider + 'static,
     C: for<'de> Deserialize<'de>,
@@ -99,7 +74,7 @@ fn try_register<F, P, C>(
 pub struct Driver {
     config: Config,
     logger: Logger,
-    providers: Vec<Box<Provider>>,
+    providers: Vec<Box<dyn Provider>>,
     gits: Recipient<DownloadRepo>,
     stats: Statistics,
 }
@@ -131,10 +106,7 @@ impl Driver {
         }
     }
 
-    pub fn register<P: Provider + 'static>(
-        &mut self,
-        provider: P,
-    ) -> &mut Self {
+    pub fn register<P: Provider + 'static>(&mut self, provider: P) -> &mut Self {
         self.providers.push(Box::new(provider));
         self
     }
@@ -154,50 +126,68 @@ impl Actor for Driver {
     type Context = Context<Driver>;
 
     fn started(&mut self, ctx: &mut Self::Context) {
-        let repos = stream::iter_ok::<_, Error>(
-            self.providers
-                .iter()
-                .map(|p| p.repositories())
-                .collect::<Vec<_>>(),
-        ).flatten();
+        ctx.set_mailbox_capacity(0);
 
-        let gits = self.gits.clone();
-        let blacklist = self.config.general.blacklist.clone();
+        let mut pending_repository_lists = Vec::new();
+
+        for provider in &self.providers {
+            pending_repository_lists.push(provider.repositories());
+        }
+
+        ctx.add_stream(stream::iter_ok::<_, Error>(pending_repository_lists).flatten());
+    }
+
+    fn stopped(&mut self, _ctx: &mut Self::Context) {
+        debug!(self.logger, "Stopping the driver");
+    }
+}
+
+impl StreamHandler<GitRepo, Error> for Driver {
+    fn handle(&mut self, repo: GitRepo, ctx: &mut Self::Context) {
+        debug!(self.logger, "Discovered a repository";
+            "ssh-url" => &repo.ssh_url,
+            "dest-dir" => repo.dest_dir.display());
+        self.stats.total_repos += 1;
+
+        let ignored = self
+            .config
+            .general
+            .blacklist
+            .iter()
+            .any(|item| Path::new(&item) == &repo.dest_dir);
+
+        if ignored {
+            info!(self.logger, "Ignoring repo"; "dest-dir" => repo.dest_dir.display());
+            self.stats.ignored += 1;
+            return;
+        }
+
+        let mailbox = ctx.address();
+
+        let r2 = repo.clone();
+        let fut = self
+            .gits
+            .send(DownloadRepo(repo.clone()))
+            .and_then(move |outcome| mailbox.send(Done { repo: r2, outcome }));
+
         let logger = self.logger.clone();
+        Arbiter::spawn(fut.map_err(move |e| {
+            error!(logger, "Unable to download {} because {}", repo.ssh_url, e);
+        }));
+    }
 
-        let started_downloading = repos
-            .filter(move |repo| {
-                let ignore = blacklist
-                    .iter()
-                    .any(|item| Path::new(&item) == &repo.dest_dir);
+    fn error(&mut self, err: Error, _ctx: &mut Self::Context) -> Running {
+        error!(self.logger, "Error: {}", err);
 
-                if ignore {
-                    info!(logger, "Ignoring repo";
-                            "dest-dir" => repo.dest_dir.display());
-                }
-                !ignore
-            }).and_then(move |repo| {
-                (
-                    future::ok(repo.clone()),
-                    gits.send(DownloadRepo(repo)).from_err(),
-                )
-            });
+        for cause in err.iter_causes() {
+            warn!(self.logger, "Caused by: {}", cause);
+        }
 
-        let this = ctx.address();
-        let finished_downloading =
-            started_downloading.and_then(move |(repo, outcome)| {
-                this.send(Done { repo, outcome }).from_err()
-            });
+        Running::Continue
+    }
 
-        let logger = self.logger.clone();
-        let this = ctx.address();
-        Arbiter::spawn(
-            finished_downloading
-                .for_each(|_| future::ok(()))
-                .map_err(
-                    move |e| error!(logger, "Error!"; "error" => e.to_string()),
-                ).then(move |_| this.send(Stop).map_err(|_| ())),
-        );
+    fn finished(&mut self, _ctx: &mut Self::Context) {
+        debug!(self.logger, "Discovered all repositories");
     }
 }
 
@@ -209,8 +199,10 @@ impl Handler<Stop> for Driver {
 
     fn handle(&mut self, _msg: Stop, _ctx: &mut Self::Context) {
         info!(self.logger, "Stopping...";
-            "error-count" => self.stats.error_count,
-            "successful-updates" => self.stats.success);
+            "failed-backups" => self.stats.error_count,
+            "successful-updates" => self.stats.success,
+            "ignored" => self.stats.ignored,
+            "total-repos" => self.stats.total_repos);
         System::current().stop();
     }
 }
@@ -224,7 +216,7 @@ struct Done {
 impl Handler<Done> for Driver {
     type Result = ();
 
-    fn handle(&mut self, msg: Done, _ctx: &mut Self::Context) {
+    fn handle(&mut self, msg: Done, ctx: &mut Self::Context) {
         if let Err(e) = msg.outcome {
             warn!(self.logger, "Error backing up a repository";
                 "error" => e.to_string(),
@@ -249,6 +241,12 @@ impl Handler<Done> for Driver {
                 "repo" => msg.repo.dest_dir.display());
             self.stats.success += 1;
         }
+
+        if self.stats.error_count + self.stats.success + self.stats.ignored
+            == self.stats.total_repos
+        {
+            ctx.notify(Stop);
+        }
     }
 }
 
@@ -256,6 +254,8 @@ impl Handler<Done> for Driver {
 pub struct Statistics {
     error_count: usize,
     success: usize,
+    ignored: usize,
+    total_repos: usize,
 }
 
 #[cfg(test)]
@@ -278,11 +278,7 @@ mod tests {
     impl Handler<DownloadRepo> for Mock {
         type Result = Result<(), Error>;
 
-        fn handle(
-            &mut self,
-            msg: DownloadRepo,
-            _ctx: &mut Self::Context,
-        ) -> Self::Result {
+        fn handle(&mut self, msg: DownloadRepo, _ctx: &mut Self::Context) -> Self::Result {
             self.repos.lock().unwrap().push(msg);
             Ok(())
         }
@@ -297,11 +293,7 @@ mod tests {
     impl Handler<DownloadRepo> for DodgyActor {
         type Result = Result<(), Error>;
 
-        fn handle(
-            &mut self,
-            _msg: DownloadRepo,
-            _ctx: &mut Self::Context,
-        ) -> Self::Result {
+        fn handle(&mut self, _msg: DownloadRepo, _ctx: &mut Self::Context) -> Self::Result {
             Err(failure::err_msg("Oops.."))
         }
     }
@@ -311,7 +303,7 @@ mod tests {
     }
 
     impl Provider for MockProvider {
-        fn repositories(&self) -> Box<Stream<Item = GitRepo, Error = Error>> {
+        fn repositories(&self) -> Box<dyn Stream<Item = GitRepo, Error = Error>> {
             Box::new(stream::iter_ok(self.repos.clone()))
         }
     }
@@ -336,15 +328,15 @@ mod tests {
         let sys = System::new("test");
         let mock = Mock {
             repos: Arc::clone(&repos),
-        }.start();
-        let mut driver =
-            Driver::new_with_recipient(cfg, logger, mock.recipient());
+        }
+        .start();
+        let mut driver = Driver::new_with_recipient(cfg, logger, mock.recipient());
         driver.register(MockProvider {
             repos: should_be.clone(),
         });
         driver.start();
 
-        assert_eq!(sys.run(), 0);
+        assert!(sys.run().is_ok());
 
         let got = repos
             .lock()
@@ -380,7 +372,6 @@ mod tests {
         });
         driver.start();
 
-        let code = sys.run();
-        assert_eq!(code, 1);
+        assert!(sys.run().is_err());
     }
 }

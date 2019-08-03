@@ -24,16 +24,13 @@ impl Actor for GitClone {
 impl Handler<DownloadRepo> for GitClone {
     type Result = Result<(), Error>;
 
-    fn handle(
-        &mut self,
-        msg: DownloadRepo,
-        _ctx: &mut Self::Context,
-    ) -> Self::Result {
+    fn handle(&mut self, msg: DownloadRepo, _ctx: &mut Self::Context) -> Self::Result {
         let DownloadRepo(GitRepo { ssh_url, dest_dir }) = msg;
 
         debug!(self.logger, "Downloading a repository";
             "dest-dir" => dest_dir.display(),
-            "url" => &ssh_url);
+            "url" => &ssh_url,
+            "thread-id" => format_args!("{:?}", std::thread::current().id()));
 
         // make sure the path is absolute
         let dest_dir = self.root.join(dest_dir);
@@ -69,7 +66,7 @@ pub struct GitRepo {
 impl From<hubcaps::repositories::Repo> for GitRepo {
     fn from(other: hubcaps::repositories::Repo) -> GitRepo {
         GitRepo {
-            dest_dir: Path::new("github").join(other.full_name),
+            dest_dir: Path::new("github.com").join(other.full_name),
             ssh_url: other.ssh_url,
         }
     }
@@ -135,8 +132,8 @@ fn can_update_git_repo(repo_dir: &Path) -> Result<(), Error> {
     let output = cmd!("git", "status", "--porcelain"; in repo_dir)
         .context("Unable to check for unsaved changes")?;
 
-    let stdout = String::from_utf8(output.stdout)
-        .context("Can't parse output from `git status`")?;
+    let stdout =
+        String::from_utf8(output.stdout).context("Can't parse output from `git status`")?;
     let lines = stdout.lines().count();
 
     if lines > 0 {
@@ -156,7 +153,7 @@ struct UnsavedChanges {
 }
 
 impl Display for UnsavedChanges {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "There are {} unsaved changes", self.count)
     }
 }

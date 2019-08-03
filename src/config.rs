@@ -1,6 +1,4 @@
-use serde::de::{
-    Deserialize, DeserializeOwned, Deserializer, Error as DeError,
-};
+use serde::de::{Deserialize, DeserializeOwned, Deserializer, Error as DeError};
 use serde::ser::{Error as SerError, Serialize, Serializer};
 use std::collections::BTreeMap;
 use std::fmt::{self, Display, Formatter};
@@ -18,10 +16,7 @@ impl Config {
         toml::from_str(raw)
     }
 
-    pub fn get_deserialized<D: DeserializeOwned>(
-        &self,
-        key: &str,
-    ) -> Result<D, ConfigError> {
+    pub fn get_deserialized<D: DeserializeOwned>(&self, key: &str) -> Result<D, ConfigError> {
         self.rest
             .get(key)
             .ok_or(ConfigError::MissingKey)
@@ -36,7 +31,7 @@ pub enum ConfigError {
 }
 
 impl Display for ConfigError {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             ConfigError::MissingKey => write!(f, "missing key"),
             ConfigError::Toml(ref t) => t.fmt(f),
@@ -72,8 +67,7 @@ impl Default for General {
 impl Serialize for Config {
     fn serialize<S: Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
         let mut merged = self.rest.clone();
-        let general =
-            Value::try_from(&self.general).map_err(S::Error::custom)?;
+        let general = Value::try_from(&self.general).map_err(S::Error::custom)?;
         merged.insert("general".into(), general);
 
         merged.serialize(ser)

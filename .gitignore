@@ -2,4 +2,3 @@
 **/*.rs.bk
 .env
 repo-backup.toml
-Cargo.lock

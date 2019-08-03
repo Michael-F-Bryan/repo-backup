@@ -1,11 +1,10 @@
-extern crate repo_backup;
-extern crate shellexpand;
+use repo_backup;
+use shellexpand;
 #[macro_use]
 extern crate slog;
-extern crate slog_async;
-extern crate slog_term;
-#[macro_use]
-extern crate structopt;
+use slog_async;
+use slog_term;
+use structopt;
 
 use slog::{Drain, Level, Logger};
 use std::path::PathBuf;
@@ -16,8 +15,22 @@ fn main() {
     let args = Args::from_args();
     let logger = initialize_logging(&args);
 
-    let code = repo_backup::run(args.config_file(), logger);
-    process::exit(code);
+    if let Err(e) = repo_backup::run(args.config_file(), &logger) {
+        error!(logger, "Error: {}", e);
+        for cause in e.iter_causes() {
+            warn!(logger, "Caused By: {}", cause);
+        }
+
+        drop(logger);
+
+        let backtrace = e.backtrace().to_string();
+
+        if !backtrace.trim().is_empty() {
+            eprintln!("{}", backtrace);
+        }
+
+        process::exit(1);
+    }
 }
 
 #[derive(Debug, Clone, StructOpt)]
@@ -29,10 +42,7 @@ pub struct Args {
         help = "Generate verbose output"
     )]
     verbosity: usize,
-    #[structopt(
-        help = "The config file",
-        default_value = "~/.repo-backup.toml"
-    )]
+    #[structopt(help = "The config file", default_value = "~/.repo-backup.toml")]
     config: String,
 }
 
