@@ -14,7 +14,7 @@ func main() {
 	}
 
 	count := 0
-	for repo := range fetchGithubRepos(context.Background(), cfg, logger) {
+	for repo := range FetchGithubRepos(context.Background(), cfg, logger) {
 		logger.Info("Found a repo", zap.Any("repo", repo))
 		count++
 	}

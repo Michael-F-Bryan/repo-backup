@@ -21,13 +21,13 @@ type Repo struct {
 	URL      string
 }
 
-func (r Repo) Download(ctx context.Context, root string, logger *zap.Logger) (UpdateStats, error) {
+func Download(ctx context.Context, root string, repo Repo, logger *zap.Logger) (UpdateStats, error) {
 	start := time.Now()
-	dest := path.Join(root, r.Provider, r.Name)
+	dest := path.Join(root, repo.Provider, repo.Name)
 
 	logger.Debug("Downloaded Repo",
 		zap.String("dest", dest),
 		zap.Duration("duration", time.Since(start)))
 
-	return UpdateStats{}, nil
+	panic("Unimplemented")
 }

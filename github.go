@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,7 +13,42 @@ import (
 
 const githubProviderName = "github.com"
 
-func fetchGithubRepos(ctx context.Context, cfg Github, logger *zap.Logger) <-chan Repo {
+type Github struct {
+	APIKey            string
+	SkipOwned         bool
+	SkipStarred       bool
+	SkipOrganisations bool
+	SkipCollaborator  bool
+}
+
+func (g Github) Valid() error {
+	if g.APIKey == "" {
+		return ErrMissingGithubApiKey
+	}
+
+	return nil
+}
+
+func (g Github) affiliations() string {
+	var affiliations []string
+	if !g.SkipOwned {
+		affiliations = append(affiliations, "owner")
+	}
+	if !g.SkipOrganisations {
+		affiliations = append(affiliations, "organization_member")
+	}
+	if !g.SkipCollaborator {
+		affiliations = append(affiliations, "collaborator")
+	}
+
+	if len(affiliations) == 0 {
+		return ""
+	}
+
+	return strings.Join(affiliations, ",")
+}
+
+func FetchGithubRepos(ctx context.Context, cfg Github, logger *zap.Logger) <-chan Repo {
 	token := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: cfg.APIKey})
 	client := github.NewClient(oauth2.NewClient(ctx, token))
 
@@ -56,7 +92,7 @@ func merge(cs ...<-chan []Repo) <-chan Repo {
 	return out
 }
 
-type getPageFunc func(ctx context.Context, page int) ([]Repo, *github.Response, error)
+type getPageFunc func(ctx context.Context, page int) ([]Repo, response, error)
 
 func getPaginated(ctx context.Context, getPage getPageFunc, logger *zap.Logger) <-chan []Repo {
 	start := time.Now()
@@ -88,7 +124,7 @@ func getPaginated(ctx context.Context, getPage getPageFunc, logger *zap.Logger) 
 			logger.Debug("Fetched page",
 				zap.Int("page", page),
 				zap.Duration("duration", time.Since(pageStart)),
-				zap.Any("rate-limit", response.Rate),
+				zap.Any("rate-limit", response.GetRate()),
 				zap.Any("next-page", response.NextPage))
 
 			if ctx.Err() != nil || page >= response.LastPage {
@@ -107,16 +143,16 @@ func getPaginated(ctx context.Context, getPage getPageFunc, logger *zap.Logger) 
 }
 
 func getStarredRepos(ctx context.Context, client *github.Client, logger *zap.Logger) getPageFunc {
-	return func(ctx context.Context, page int) ([]Repo, *github.Response, error) {
+	return func(ctx context.Context, page int) ([]Repo, response, error) {
 		options := &github.ActivityListStarredOptions{
 			ListOptions: github.ListOptions{
 				Page:    page,
 				PerPage: 100,
 			},
 		}
-		got, response, err := client.Activity.ListStarred(ctx, "", options)
+		got, resp, err := client.Activity.ListStarred(ctx, "", options)
 		if err != nil {
-			return nil, nil, err
+			return nil, response{}, err
 		}
 
 		repos := make([]Repo, 0, len(got))
@@ -128,12 +164,12 @@ func getStarredRepos(ctx context.Context, client *github.Client, logger *zap.Log
 			})
 		}
 
-		return repos, response, nil
+		return repos, githubResponse(resp), nil
 	}
 }
 
 func getOwnedAndOrgs(ctx context.Context, client *github.Client, affiliations string, logger *zap.Logger) getPageFunc {
-	return func(ctx context.Context, page int) ([]Repo, *github.Response, error) {
+	return func(ctx context.Context, page int) ([]Repo, response, error) {
 		options := &github.RepositoryListOptions{
 			Affiliation: affiliations,
 			ListOptions: github.ListOptions{
@@ -141,9 +177,9 @@ func getOwnedAndOrgs(ctx context.Context, client *github.Client, affiliations st
 				PerPage: 100,
 			},
 		}
-		got, response, err := client.Repositories.List(ctx, "", options)
+		got, resp, err := client.Repositories.List(ctx, "", options)
 		if err != nil {
-			return nil, nil, err
+			return nil, response{}, err
 		}
 
 		repos := make([]Repo, 0, len(got))
@@ -155,6 +191,14 @@ func getOwnedAndOrgs(ctx context.Context, client *github.Client, affiliations st
 			})
 		}
 
-		return repos, response, nil
+		return repos, githubResponse(resp), nil
+	}
+}
+
+func githubResponse(r *github.Response) response {
+	return response{
+		NextPage: r.NextPage,
+		LastPage: r.LastPage,
+		getRate:  func() interface{} { return r.Rate },
 	}
 }
