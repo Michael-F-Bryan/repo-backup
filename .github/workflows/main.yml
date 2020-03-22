@@ -59,5 +59,4 @@ jobs:
         with:
           build_dir: target/doc
         env:
-          # TODO: Create a "public_repo" Personal Access Token
-          GITHUB_PAT: ${ { secrets.GITHUB_PAT }}
+          GITHUB_PAT: ${{ secrets.GITHUB_PAT }}
