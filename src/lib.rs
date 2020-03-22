@@ -1,21 +1,20 @@
-#[macro_use]
-extern crate actix;
-use failure;
+mod providers;
 
-#[macro_use]
-extern crate failure_derive;
+pub use providers::*;
 
-#[macro_use]
-extern crate slog;
+#[derive(Debug, Clone, PartialEq)]
+pub struct Repository {
+    /// The [`Repository`]'s name.
+    pub name: String,
+    /// An optional namespace for the [`Repository`], typically used to group
+    /// projects by user or organisation.
+    pub namespace: Option<String>,
+    pub download_info: DownloadInfo,
+}
 
-#[macro_use]
-extern crate serde_derive;
-
-pub mod config;
-mod driver;
-mod git;
-pub mod providers;
-
-pub use crate::config::Config;
-pub use crate::driver::{run, Driver};
-pub use crate::git::GitRepo;
+/// Information used to download a [`Repository`].
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum DownloadInfo {
+    Git { ssh_url: String },
+}
